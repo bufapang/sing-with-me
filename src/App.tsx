@@ -231,13 +231,20 @@ export default function App() {
       
       while (true) {
         const status1 = await checkPredictionStatus(step1Result);
+        console.log('Step 1 status:', status1);
         if (status1.status === 'succeeded') {
-          const output = status1.output;
-          vocalsUrl = String(output?.vocals || output?.[0] || '');
-          accompanimentUrl = String(output?.accompaniment || output?.[1] || '');
+          const out = status1.output;
+          if (typeof out === 'string') {
+            vocalsUrl = out;
+            accompanimentUrl = '';
+          } else if (out && typeof out === 'object') {
+            vocalsUrl = out.vocals || out[0]?.audio || '';
+            accompanimentUrl = out.accompaniment || out[1]?.audio || '';
+          }
+          console.log('vocalsUrl:', vocalsUrl, 'accompanimentUrl:', accompanimentUrl);
           break;
         } else if (status1.status === 'failed') {
-          throw new Error('音乐分离失败');
+          throw new Error('音乐分离失败: ' + (status1.error || ''));
         }
         await new Promise(r => setTimeout(r, 3000));
       }
@@ -250,11 +257,19 @@ export default function App() {
       let userVocalsUrl = '';
       while (true) {
         const status2 = await checkPredictionStatus(step2Result);
+        console.log('Step 2 status:', status2);
         if (status2.status === 'succeeded') {
-          userVocalsUrl = String(status2.output || '');
+          // output可能是字符串或对象
+          const out = status2.output;
+          if (typeof out === 'string') {
+            userVocalsUrl = out;
+          } else if (out && typeof out === 'object') {
+            userVocalsUrl = out.audio || out.url || out[0]?.audio || JSON.stringify(out);
+          }
+          console.log('userVocalsUrl extracted:', userVocalsUrl);
           break;
         } else if (status2.status === 'failed') {
-          throw new Error('歌声转换失败');
+          throw new Error('歌声转换失败: ' + (status2.error || ''));
         }
         await new Promise(r => setTimeout(r, 3000));
       }
