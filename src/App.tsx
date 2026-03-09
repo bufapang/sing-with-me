@@ -1,0 +1,458 @@
+import { useState, useRef, useEffect } from 'react';
+import { Mic, Square, Download, Music, Loader2 } from 'lucide-react';
+
+type Step = 'record' | 'song' | 'processing' | 'result';
+
+interface RecordingState {
+  isRecording: boolean;
+  duration: number;
+  audioBlob: Blob | null;
+  audioUrl: string | null;
+}
+
+interface Song {
+  id: string;
+  name: string;
+  artist: string;
+  string url: string;
+}
+
+//const DEMO_S三首歌曲
+ONGS: Song[] = [
+  { id: '1', name: '晴天', artist: '周杰伦', url: 'https://raw.githubusercontent.com/bufapang/sing-with-me/main/qingtian_duan.mp3' },
+  { id: '2', name: '稻香', artist: '周杰伦', url: 'https://raw.githubusercontent.com/bufapang/sing-with-me/main/daoxiang_duan.mp3' },
+  { id: '3', name: '人间共鸣', artist: '李健', url: 'https://raw.githubusercontent.com/bufapang/sing-with-me/main/renjiangongming_duan.mp3' },
+];
+
+export default function App() {
+  const [step, setStep] = useState<Step>('record');
+  const [selectedSong, setSelectedSong] = useState<Song | null>(null);
+  const [recording, setRecording] = useState<RecordingState>({
+    isRecording: false,
+    duration: 0,
+    audioBlob: null,
+    audioUrl: null,
+  });
+  const [resultAudio, setResultAudio] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [progressText, setProgressText] = useState('');
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  // 开始录音
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      chunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) {
+          chunksRef.current.push(e.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const url = URL.createObjectURL(blob);
+        setRecording({ isRecording: false, duration: recording.duration, audioBlob: blob, audioUrl: url });
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setRecording({ ...recording, isRecording: true, duration: 0 });
+      
+      timerRef.current = window.setInterval(() => {
+        setRecording(prev => ({ ...prev, duration: prev.duration + 1 }));
+      }, 1000);
+    } catch (err) {
+      setError('无法访问麦克风');
+    }
+  };
+
+  // 停止录音
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && recording.isRecording) {
+      mediaRecorderRef.current.stop();
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+      }
+    }
+  };
+
+  // 创建预测
+  const createPredictionStep = async (songUrl: string, userVoiceUrl: string, step: string) => {
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ songUrl, userVoiceUrl, step }),
+    });
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error || `API error: ${response.status}`);
+    }
+    const data = await response.json();
+    return data.predictionId;
+  };
+
+  // 检查预测状态
+  const checkPredictionStatus = async (id: string) => {
+    const response = await fetch(`/api/generate?predictionId=${id}`, { method: 'GET' });
+    if (!response.ok) throw new Error(`API error: ${response.status}`);
+    const data = await response.json();
+    return { status: data.status, output: data.output, error: data.error };
+  };
+
+  // 混音两个音频
+  const mixAudio = async (vocalsUrl: string, accompanimentUrl: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const audioContext = new AudioContext();
+      
+      const loadAudio = async (url: string) => {
+        const proxyUrl = `/api/generate?proxy=true&url=${encodeURIComponent(url)}`;
+        const response = await fetch(proxyUrl);
+        const arrayBuffer = await response.arrayBuffer();
+        return await audioContext.decodeAudioData(arrayBuffer);
+      };
+      
+      Promise.all([loadAudio(vocalsUrl), loadAudio(accompanimentUrl)])
+        .then(([vocals, accompaniment]) => {
+          const output = audioContext.createBuffer(
+            2,
+            Math.max(vocals.length, accompaniment.length),
+            audioContext.sampleRate
+          );
+          
+          for (let channel = 0; channel < 2; channel++) {
+            const vocalsData = vocals.getChannelData(channel);
+            const accompanimentData = accompaniment.getChannelData(channel);
+            const outputData = output.getChannelData(channel);
+            
+            for (let i = 0; i < output.length; i++) {
+              outputData[i] = (vocalsData[i] || 0) * 0.5 + (accompanimentData[i] || 0) * 0.5;
+            }
+          }
+          
+          const wav = audioBufferToWav(output);
+          const blob = new Blob([wav], { type: 'audio/wav' });
+          const url = URL.createObjectURL(blob);
+          resolve(url);
+        })
+        .catch(reject);
+    });
+  };
+
+  // AudioBuffer to WAV
+  function audioBufferToWav(buffer: AudioBuffer): ArrayBuffer {
+    const numChannels = buffer.numberOfChannels;
+    const sampleRate = buffer.sampleRate;
+    const format = 1;
+    const bitDepth = 16;
+    
+    const bytesPerSample = bitDepth / 8;
+    const blockAlign = numChannels * bytesPerSample;
+    const dataLength = buffer.length * blockAlign;
+    const bufferLength = 44 + dataLength;
+    
+    const arrayBuffer = new ArrayBuffer(bufferLength);
+    const view = new DataView(arrayBuffer);
+    
+    const writeString = (view: DataView, offset: number, str: string) => {
+      for (let i = 0; i < str.length; i++) {
+        view.setUint8(offset + i, str.charCodeAt(i));
+      }
+    };
+    
+    writeString(view, 0, 'RIFF');
+    view.setUint32(4, 36 + dataLength, true);
+    writeString(view, 8, 'WAVE');
+    writeString(view, 12, 'fmt ');
+    view.setUint32(16, 16, true);
+    view.setUint16(20, format, true);
+    view.setUint16(22, numChannels, true);
+    view.setUint32(24, sampleRate, true);
+    view.setUint32(28, sampleRate * blockAlign, true);
+    view.setUint16(32, blockAlign, true);
+    view.setUint16(34, bitDepth, true);
+    writeString(view, 36, 'data');
+    view.setUint32(40, dataLength, true);
+    
+    const channels = [];
+    for (let i = 0; i < numChannels; i++) {
+      channels.push(buffer.getChannelData(i));
+    }
+    
+    let offset = 44;
+    for (let i = 0; i < buffer.length; i++) {
+      for (let ch = 0; ch < numChannels; ch++) {
+        const sample = Math.max(-1, Math.min(1, channels[ch][i]));
+        view.setInt16(offset, sample < 0 ? sample * 0x8000 : sample * 0x7FFF, true);
+        offset += 2;
+      }
+    }
+    
+    return arrayBuffer;
+  }
+
+  // 提交处理
+  const handleSubmit = async () => {
+    if (!recording.audioBlob) {
+      setError('请先录音');
+      return;
+    }
+    if (!selectedSong) {
+      setError('请选择一首歌曲');
+      return;
+    }
+
+    setIsProcessing(true);
+    setStep('processing');
+    setError(null);
+    setProgressText('正在创建 AI 任务...');
+
+    try {
+      // 步骤1: 音乐分离
+      setProgressText('步骤1/3: 分离人声和伴奏...');
+      const step1Result = await createPredictionStep(selectedSong.url, '', '1');
+      
+      let vocalsUrl = '';
+      let accompanimentUrl = '';
+      
+      while (true) {
+        const status1 = await checkPredictionStatus(step1Result);
+        if (status1.status === 'succeeded') {
+          const output = status1.output;
+          vocalsUrl = String(output?.vocals || output?.[0] || '');
+          accompanimentUrl = String(output?.accompaniment || output?.[1] || '');
+          break;
+        } else if (status1.status === 'failed') {
+          throw new Error('音乐分离失败');
+        }
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      
+      setProgressText('步骤2/3: 转换歌声...');
+      
+      // 步骤2: 歌声转换
+      const step2Result = await createPredictionStep(vocalsUrl, recording.audioUrl!, '2');
+      
+      let userVocalsUrl = '';
+      while (true) {
+        const status2 = await checkPredictionStatus(step2Result);
+        if (status2.status === 'succeeded') {
+          userVocalsUrl = String(status2.output || '');
+          break;
+        } else if (status2.status === 'failed') {
+          throw new Error('歌声转换失败');
+        }
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      
+      setProgressText('步骤3/3: 混音合成...');
+      
+      // 步骤3: 前端混音
+      const finalAudioUrl = await mixAudio(userVocalsUrl, accompanimentUrl);
+      
+      setResultAudio(finalAudioUrl);
+      setStep('result');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '发生错误');
+      setStep('song');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 重置
+  const reset = () => {
+    setStep('record');
+    setSelectedSong(null);
+    setRecording({ isRecording: false, duration: 0, audioBlob: null, audioUrl: null });
+    setResultAudio(null);
+    setError(null);
+    setProgressText('');
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-purple-900 via-indigo-900 to-black text-white">
+      <div className="container mx-auto px-4 py-8 max-w-2xl">
+        <header className="text-center mb-12">
+          <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
+            🎤 Sing With Me
+          </h1>
+          <p className="text-gray-400">用你的声音唱任何歌曲</p>
+        </header>
+
+        {/* 步骤 1: 录音 */}
+        {step === 'record' && (
+          <div className="bg-gray-800/50 backdrop-blur rounded-2xl p-12 text-center">
+            <div className="mb-8">
+              <div className="w-32 h-32 mx-auto mb-6 bg-gradient-to-br from-pink-500 to-purple-600 rounded-full flex items-center justify-center">
+                <Mic size={64} />
+              </div>
+              <h2 className="text-2xl font-bold mb-2">录制你的声音</h2>
+              <p className="text-gray-400">点击开始录音，然后唱你想唱的歌曲</p>
+            </div>
+
+            {recording.isRecording ? (
+              <div className="mb-6">
+                <p className="text-3xl font-mono mb-4">{formatTime(recording.duration)}</p>
+                <div className="w-4 h-4 bg-red-500 rounded-full mx-auto animate-pulse mb-4" />
+                <button
+                  onClick={stopRecording}
+                  className="px-8 py-3 bg-red-500 hover:bg-red-600 rounded-full font-medium transition-all inline-flex items-center"
+                >
+                  <Square className="mr-2" size={20} />
+                  停止录音
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={startRecording}
+                className="px-8 py-3 bg-pink-500 hover:bg-pink-600 rounded-full font-medium transition-all inline-flex items-center"
+              >
+                <Mic className="mr-2" size={20} />
+                开始录音
+              </button>
+            )}
+
+            {recording.audioUrl && !recording.isRecording && (
+              <div className="mt-6">
+                <audio controls src={recording.audioUrl} className="w-full mb-4" />
+                <button
+                  onClick={() => setStep('song')}
+                  className="px-8 py-3 bg-green-500 hover:bg-green-600 rounded-full font-medium transition-all"
+                >
+                  下一步
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* 步骤 2: 选择歌曲 */}
+        {step === 'song' && (
+          <div className="bg-gray-800/50 backdrop-blur rounded-2xl p-8">
+            <h2 className="text-2xl font-bold mb-6 text-center">选择歌曲</h2>
+            
+            <div className="space-y-3 mb-6">
+              {DEMO_SONGS.map((song) => (
+                <button
+                  key={song.id}
+                  onClick={() => setSelectedSong(song)}
+                  className={`w-full p-4 rounded-lg text-left transition-all ${
+                    selectedSong?.id === song.id
+                      ? 'bg-pink-500 border-2 border-pink-400'
+                      : 'bg-gray-700 hover:bg-gray-600 border-2 border-transparent'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="font-medium">{song.name}</p>
+                      <p className="text-sm text-gray-400">{song.artist}</p>
+                    </div>
+                    <Music size={24} className="text-gray-400" />
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {selectedSong && (
+              <div className="bg-green-500/20 border border-green-500 rounded-lg p-3 mb-6">
+                <p className="text-green-400">✓ 已选择: {selectedSong.name} - {selectedSong.artist}</p>
+              </div>
+            )}
+
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={() => setStep('record')}
+                className="px-6 py-3 bg-gray-600 hover:bg-gray-700 rounded-full font-medium transition-all"
+              >
+                上一步
+              </button>
+              <button
+                onClick={handleSubmit}
+                disabled={isProcessing || !selectedSong}
+                className="px-8 py-3 bg-pink-500 hover:bg-pink-600 disabled:bg-gray-600 disabled:cursor-not-allowed rounded-full font-medium transition-all"
+              >
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="inline mr-2 animate-spin" size={20} />
+                    处理中...
+                  </>
+                ) : (
+                  '开始生成 🎵'
+                )}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* 步骤 3: 处理中 */}
+        {step === 'processing' && (
+          <div className="bg-gray-800/50 backdrop-blur rounded-2xl p-12 text-center">
+            <Loader2 size={64} className="mx-auto mb-6 text-pink-500 animate-spin" />
+            <h2 className="text-2xl font-bold mb-2">正在生成你的歌曲</h2>
+            <p className="text-gray-400 mb-6">{progressText}</p>
+            <p className="text-sm text-gray-500">预计需要 1-3 分钟</p>
+          </div>
+        )}
+
+        {/* 步骤 4: 结果 */}
+        {step === 'result' && resultAudio && (
+          <div className="bg-gray-800/50 backdrop-blur rounded-2xl p-8 text-center">
+            <div className="mb-6 text-6xl">🎉</div>
+            <h2 className="text-2xl font-bold mb-2">生成完成！</h2>
+            <p className="text-gray-400 mb-6">这是 AI 生成的歌声</p>
+            
+            <audio controls src={resultAudio} className="w-full mb-6" />
+            
+            <div className="flex justify-center gap-4">
+              <button
+                onClick={reset}
+                className="px-6 py-3 bg-gray-600 hover:bg-gray-700 rounded-full font-medium transition-all"
+              >
+                重新开始
+              </button>
+              <a
+                href={resultAudio}
+                download="my-ai-song.wav"
+                className="px-6 py-3 bg-green-500 hover:bg-green-600 rounded-full font-medium transition-all inline-flex items-center"
+              >
+                <Download className="mr-2" size={20} />
+                下载音频
+              </a>
+            </div>
+          </div>
+        )}
+
+        {error && (
+          <div className="mt-4 bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
+            {error}
+          </div>
+        )}
+
+        <footer className="text-center mt-12 text-gray-500 text-sm">
+          <p>Powered by Replicate AI</p>
+        </footer>
+      </div>
+    </div>
+  );
+}
