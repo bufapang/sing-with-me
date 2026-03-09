@@ -14,11 +14,11 @@ interface Song {
   id: string;
   name: string;
   artist: string;
-  string url: string;
+  url: string;
 }
 
-//const DEMO_S三首歌曲
-ONGS: Song[] = [
+// 预设歌曲列表（固定三首）
+const DEMO_SONGS: Song[] = [
   { id: '1', name: '晴天', artist: '周杰伦', url: 'https://raw.githubusercontent.com/bufapang/sing-with-me/main/qingtian_duan.mp3' },
   { id: '2', name: '稻香', artist: '周杰伦', url: 'https://raw.githubusercontent.com/bufapang/sing-with-me/main/daoxiang_duan.mp3' },
   { id: '3', name: '人间共鸣', artist: '李健', url: 'https://raw.githubusercontent.com/bufapang/sing-with-me/main/renjiangongming_duan.mp3' },
