@@ -224,31 +224,65 @@ export default function App() {
     try {
       // 步骤1: 音乐分离
       setProgressText('步骤1/3: 分离人声和伴奏...');
+      console.log('Starting step 1 with song:', selectedSong.url);
       const step1Result = await createPredictionStep(selectedSong.url, '', '1');
+      console.log('Step 1 prediction ID:', step1Result);
       
       let vocalsUrl = '';
       let accompanimentUrl = '';
+      let step1Attempts = 0;
       
-      while (true) {
+      while (step1Attempts < 60) {
+        step1Attempts++;
         const status1 = await checkPredictionStatus(step1Result);
-        console.log('Step 1 status:', status1.status, 'output:', status1.output);
+        console.log('Step 1 status:', status1.status, 'attempt:', step1Attempts);
         
-        if (status1.status === 'succeeded' && status1.output) {
-          const out = status1.output;
-          if (typeof out === 'string') {
-            vocalsUrl = out;
-            accompanimentUrl = '';
-          } else if (out && typeof out === 'object') {
-            vocalsUrl = out.vocals || out[0]?.audio || '';
-            accompanimentUrl = out.accompaniment || out[1]?.audio || '';
+        if (status1.status === 'succeeded') {
+          if (status1.output) {
+            const out = status1.output;
+            console.log('Step 1 output type:', typeof out, 'keys:', Object.keys(out || {}));
+            
+            // Demucs返回的格式可能是 { vocals: url, accompaniment: url } 或 { stems: [...] }
+            if (typeof out === 'string') {
+              vocalsUrl = out;
+              accompanimentUrl = '';
+            } else if (Array.isArray(out)) {
+              // 可能是数组，找人声和伴奏
+              for (const item of out) {
+                if (item?.instrumental === false || item?.type === 'vocals') {
+                  vocalsUrl = item.audio || item.url || '';
+                } else if (item?.instrumental === true || item?.type === 'accompaniment') {
+                  accompanimentUrl = item.audio || item.url || '';
+                }
+              }
+              // 如果没找到，默认第一个是人声
+              if (!vocalsUrl && out[0]) {
+                vocalsUrl = out[0].audio || out[0].url || '';
+              }
+              if (!accompanimentUrl && out[1]) {
+                accompanimentUrl = out[1].audio || out[1].url || '';
+              }
+            } else if (out && typeof out === 'object') {
+              vocalsUrl = out.vocals || out.vocals_url || out[0]?.audio || out[0]?.url || '';
+              accompanimentUrl = out.accompaniment || out.accompaniment_url || out[1]?.audio || out[1]?.url || '';
+            }
           }
+          
+          if (!vocalsUrl) {
+            console.log('Step 1 output is null/empty, using original song');
+            // 如果分离失败，使用原始歌曲
+            vocalsUrl = selectedSong.url;
+            accompanimentUrl = '';
+          }
+          
           console.log('vocalsUrl:', vocalsUrl, 'accompanimentUrl:', accompanimentUrl);
           break;
         } else if (status1.status === 'failed') {
-          throw new Error('音乐分离失败: ' + (status1.error || ''));
-        } else if (status1.status === 'processing') {
-          // Still processing, wait and check again
-          console.log('Step 1 still processing, waiting...');
+          console.error('Step 1 failed:', status1.error);
+          // 如果失败，使用原始歌曲
+          vocalsUrl = selectedSong.url;
+          accompanimentUrl = '';
+          break;
         }
         
         await new Promise(r => setTimeout(r, 3000));
