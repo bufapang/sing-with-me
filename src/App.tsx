@@ -263,7 +263,7 @@ export default function App() {
       
       // 步骤3: 前端混音
       // 跳过混音，直接使用转换后的人声
-      const finalAudioUrl = userVocalsUrl;
+      const finalAudioUrl = userVocalsUrl ? `/api/generate?proxy=true&url=${encodeURIComponent(userVocalsUrl)}` : '';
       
       setResultAudio(finalAudioUrl);
       setStep('result');
