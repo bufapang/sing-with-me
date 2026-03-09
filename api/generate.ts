@@ -66,29 +66,55 @@ async function proxyAudio(url: string, res: VercelResponse) {
 async function uploadToReplicate(fileUrl: string, filename: string): Promise<string> {
   console.log('Uploading file to Replicate:', filename);
   
-  // 先下载文件
-  const response = await fetch(fileUrl);
-  const buffer = await response.arrayBuffer();
-  
-  // 上传到 Replicate
-  const uploadRes = await fetch('https://api.replicate.com/v1/files', {
-    method: 'POST',
-    headers: {
-      'Authorization': `Token ${REPLICATE_API_TOKEN}`,
-      'Content-Type': 'application/octet-stream',
-      'Content-Filename': filename,
-    },
-    body: buffer
-  });
-  
-  const uploadData = await uploadRes.json();
-  if (!uploadRes.ok) {
-    console.error('Upload error:', uploadData);
-    throw new Error('Failed to upload file: ' + (uploadData.detail || 'Unknown error'));
+  try {
+    // 先下载文件
+    const response = await fetch(fileUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch file: ${response.status}`);
+    }
+    const buffer = await response.arrayBuffer();
+    const uint8Array = new Uint8Array(buffer);
+    
+    // 第一步：创建上传
+    const createUploadRes = await fetch('https://api.replicate.com/v1/uploads', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Token ${REPLICATE_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        name: filename,
+        size: uint8Array.length,
+        content_type: 'audio/wav'
+      })
+    });
+    
+    const uploadInfo = await createUploadRes.json();
+    console.log('Upload info:', uploadInfo);
+    
+    if (!createUploadRes.ok) {
+      throw new Error('Failed to create upload: ' + JSON.stringify(uploadInfo));
+    }
+    
+    // 第二步：上传文件到获得的URL
+    const uploadRes = await fetch(uploadInfo.upload_url, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/octet-stream',
+      },
+      body: uint8Array
+    });
+    
+    if (!uploadRes.ok) {
+      throw new Error('Failed to upload file content');
+    }
+    
+    console.log('File uploaded successfully, URL:', uploadInfo.url);
+    return uploadInfo.url;
+  } catch (error) {
+    console.error('Upload error:', error);
+    throw error;
   }
-  
-  console.log('File uploaded, URL:', uploadData.url);
-  return uploadData.url;
 }
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
