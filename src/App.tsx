@@ -262,7 +262,8 @@ export default function App() {
       setProgressText('步骤3/3: 混音合成...');
       
       // 步骤3: 前端混音
-      const finalAudioUrl = await mixAudio(userVocalsUrl, accompanimentUrl);
+      // 跳过混音，直接使用转换后的人声
+      const finalAudioUrl = userVocalsUrl;
       
       setResultAudio(finalAudioUrl);
       setStep('result');
