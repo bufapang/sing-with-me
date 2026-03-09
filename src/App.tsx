@@ -106,6 +106,23 @@ export default function App() {
     return data.predictionId;
   };
 
+  // 上传用户音频到公开URL
+  const uploadUserVoice = async (audioUrl: string): Promise<string> => {
+    console.log('Uploading user voice for training...');
+    const response = await fetch('/api/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userVoiceUrl: audioUrl, step: 'upload' }),
+    });
+    if (!response.ok) {
+      const errData = await response.json();
+      throw new Error(errData.error || `Upload error: ${response.status}`);
+    }
+    const data = await response.json();
+    console.log('Upload result:', data);
+    return data.url;
+  };
+
   // 检查预测状态
   const checkPredictionStatus = async (id: string) => {
     const response = await fetch(`/api/generate?predictionId=${id}`, { method: 'GET' });
@@ -222,12 +239,19 @@ export default function App() {
     setProgressText('正在创建 AI 任务...');
 
     try {
-      // 步骤0: 训练RVC模型（使用用户声音）
-      setProgressText('步骤1/4: 训练声音模型（约需13分钟）...');
-      console.log('Training RVC model with user voice:', recording.audioUrl);
+      // 步骤0: 上传用户声音并训练RVC模型
+      setProgressText('步骤1/4: 上传用户声音...');
+      console.log('Uploading user voice for training:', recording.audioUrl);
       
-      // 调用训练API，传入用户录音作为训练数据
-      const trainResult = await createPredictionStep('', recording.audioUrl!, 'train');
+      // 先上传用户音频到公开URL
+      const uploadedVoiceUrl = await uploadUserVoice(recording.audioUrl!);
+      console.log('User voice uploaded, URL:', uploadedVoiceUrl);
+      
+      setProgressText('步骤1/4: 训练声音模型（约需13分钟）...');
+      console.log('Training RVC model with uploaded voice:', uploadedVoiceUrl);
+      
+      // 调用训练API，传入已上传的用户音频URL
+      const trainResult = await createPredictionStep('', uploadedVoiceUrl, 'train');
       console.log('Training prediction ID:', trainResult);
       
       let trainedModelUrl = '';

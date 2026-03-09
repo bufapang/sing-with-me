@@ -62,6 +62,35 @@ async function proxyAudio(url: string, res: VercelResponse) {
   }
 }
 
+// 上传文件到公开URL (使用 Replicate 的上传功能)
+async function uploadToReplicate(fileUrl: string, filename: string): Promise<string> {
+  console.log('Uploading file to Replicate:', filename);
+  
+  // 先下载文件
+  const response = await fetch(fileUrl);
+  const buffer = await response.arrayBuffer();
+  
+  // 上传到 Replicate
+  const uploadRes = await fetch('https://api.replicate.com/v1/files', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${REPLICATE_API_TOKEN}`,
+      'Content-Type': 'application/octet-stream',
+      'Content-Filename': filename,
+    },
+    body: buffer
+  });
+  
+  const uploadData = await uploadRes.json();
+  if (!uploadRes.ok) {
+    console.error('Upload error:', uploadData);
+    throw new Error('Failed to upload file: ' + (uploadData.detail || 'Unknown error'));
+  }
+  
+  console.log('File uploaded, URL:', uploadData.url);
+  return uploadData.url;
+}
+
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -72,8 +101,6 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
 
   const { songUrl, userVoiceUrl, step, predictionId, proxy, url } = request.body || request.query;
-
-  console.log('API called:', { method: request.method, predictionId, step, userVoiceUrl: userVoiceUrl ? 'provided' : 'missing' });
 
   // 音频代理
   if (request.method === 'GET' && proxy === 'true' && url) {
@@ -90,6 +117,22 @@ export default async function handler(request: VercelRequest, response: VercelRe
     } catch (error) {
       console.error('Check prediction error:', error);
       return response.status(500).json({ error: 'Failed to check prediction' });
+    }
+  }
+
+  // 上传用户音频用于训练
+  if (request.method === 'POST' && step === 'upload') {
+    if (!userVoiceUrl) {
+      return response.status(400).json({ error: 'userVoiceUrl is required' });
+    }
+    
+    try {
+      // 上传用户音频到Replicate
+      const uploadedUrl = await uploadToReplicate(userVoiceUrl, 'user_voice.wav');
+      return response.status(200).json({ url: uploadedUrl });
+    } catch (error) {
+      console.error('Upload error:', error);
+      return response.status(500).json({ error: error instanceof Error ? error.message : 'Failed to upload' });
     }
   }
 
@@ -111,16 +154,14 @@ export default async function handler(request: VercelRequest, response: VercelRe
       console.log('Processing step:', currentStep);
       
       if (currentStep === 'train') {
-        // 训练RVC模型
-        // userVoiceUrl 是用户录音的URL
-        // 我们需要先上传用户的音频到公开URL
+        // 训练RVC模型 - userVoiceUrl 应该是已经上传到公开URL的用户音频
         version = TRAIN_RVC_VERSION;
         input = {
-          dataset_zip: userVoiceUrl,  // 用户录音作为训练数据
+          dataset_zip: userVoiceUrl,  // 用户音频的URL（已上传）
           sample_rate: '48k',
           version: 'v2',
           f0method: 'rmvpe_gpu',
-          epoch: 10,  // 减少训练轮数加快速度
+          epoch: 10,
           batch_size: '7'
         };
         console.log('Training RVC model with input:', input);
@@ -131,12 +172,11 @@ export default async function handler(request: VercelRequest, response: VercelRe
         console.log('Step 1 input:', input);
       } else if (currentStep === '2') {
         // 步骤2: 歌声转换 - 使用训练好的RVC模型
-        // userVoiceUrl 是训练好的模型URL
         version = VOICE_CLONING_VERSION;
         input = {
-          song_input: songUrl,  // 原始歌曲
-          custom_rvc_model_download_url: userVoiceUrl,  // 训练好的模型
-          rvc_model: 'CUSTOM',  // 使用自定义模型
+          song_input: songUrl,
+          custom_rvc_model_download_url: userVoiceUrl,
+          rvc_model: 'CUSTOM',
           pitch_change: 'no-change',
           output_format: 'mp3'
         };
