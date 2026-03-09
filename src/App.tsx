@@ -261,9 +261,22 @@ export default function App() {
       
       setProgressText('步骤3/3: 混音合成...');
       
-      // 步骤3: 前端混音
-      // 跳过混音，直接使用转换后的人声
-      const finalAudioUrl = userVocalsUrl ? `/api/generate?proxy=true&url=${encodeURIComponent(userVocalsUrl)}` : '';
+      // 步骤3: 混音
+      console.log('Starting mix with userVocalsUrl:', userVocalsUrl, 'accompanimentUrl:', accompanimentUrl);
+      
+      let finalAudioUrl = '';
+      try {
+        finalAudioUrl = await mixAudio(userVocalsUrl, accompanimentUrl);
+        console.log('Mix completed, result:', finalAudioUrl);
+      } catch (mixErr) {
+        console.error('Mix failed:', mixErr);
+        // 如果混音失败，直接使用转换后的人声
+        finalAudioUrl = userVocalsUrl;
+      }
+      
+      if (!finalAudioUrl) {
+        finalAudioUrl = userVocalsUrl;
+      }
       
       setResultAudio(finalAudioUrl);
       setStep('result');
