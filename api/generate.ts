@@ -64,21 +64,28 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   const { songUrl, userVoiceUrl, step, predictionId, proxy, url } = request.body || request.query;
 
+  console.log('API called:', { method: request.method, predictionId, step, songUrl: songUrl ? 'provided' : 'missing' });
+
   // 音频代理
   if (request.method === 'GET' && proxy === 'true' && url) {
     await proxyAudio(url as string, response);
     return;
   }
 
+  // 检查预测状态
   if (request.method === 'GET' && predictionId) {
     try {
+      console.log('Checking prediction:', predictionId);
       const result = await checkPrediction(predictionId as string);
+      console.log('Prediction result:', result);
       return response.status(200).json(result);
     } catch (error) {
+      console.error('Check prediction error:', error);
       return response.status(500).json({ error: 'Failed to check prediction' });
     }
   }
 
+  // 创建预测
   if (request.method === 'POST') {
     if (!REPLICATE_API_TOKEN) {
       return response.status(500).json({ error: 'REPLICATE_API_TOKEN is not set' });
