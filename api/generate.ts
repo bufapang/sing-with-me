@@ -2,10 +2,14 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
+// 步骤1: 音乐分离 (Demucs)
 const DEMUCS_VERSION = 'b84861ae9b787409ef92927b5a07704fda87a0a7762e9bb7b09c517357eadb53';
-const SVC_VERSION = 'f29872ee3557e0186735048f1d6de98a52518ae5c49e19453b3fdaad710bdc2b';
+
+// 步骤2: 歌声转换 (Realistic Voice Cloning)
+const VOICE_CLONING_VERSION = '0a9c7c558af4c0f20667c1bd1260ce32a2879944a0b9e44e1398660c077b1550';
 
 async function createPrediction(version: string, input: any): Promise<string> {
+  console.log('Creating prediction with version:', version, 'input:', JSON.stringify(input));
   const res = await fetch('https://api.replicate.com/v1/predictions', {
     method: 'POST',
     headers: {
@@ -21,6 +25,7 @@ async function createPrediction(version: string, input: any): Promise<string> {
     throw new Error(data.detail || 'Failed to create prediction');
   }
   
+  console.log('Prediction created:', data.id);
   return data.id;
 }
 
@@ -29,6 +34,7 @@ async function checkPrediction(id: string): Promise<{ status: string; output: an
     headers: { 'Authorization': `Token ${REPLICATE_API_TOKEN}` },
   });
   const data = await res.json();
+  console.log('Prediction status:', id, 'status:', data.status);
   return { status: data.status, output: data.output, error: data.error };
 }
 
@@ -64,10 +70,11 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
   const { songUrl, userVoiceUrl, step, predictionId, proxy, url } = request.body || request.query;
 
-  console.log('API called:', { method: request.method, predictionId, step, songUrl: songUrl ? 'provided' : 'missing' });
+  console.log('API called:', { method: request.method, predictionId, step, songUrl: songUrl ? 'provided' : 'missing', userVoiceUrl: userVoiceUrl ? 'provided' : 'missing' });
 
   // 音频代理
   if (request.method === 'GET' && proxy === 'true' && url) {
+    console.log('Proxying audio:', url);
     await proxyAudio(url as string, response);
     return;
   }
@@ -75,9 +82,7 @@ export default async function handler(request: VercelRequest, response: VercelRe
   // 检查预测状态
   if (request.method === 'GET' && predictionId) {
     try {
-      console.log('Checking prediction:', predictionId);
       const result = await checkPrediction(predictionId as string);
-      console.log('Prediction result:', result);
       return response.status(200).json(result);
     } catch (error) {
       console.error('Check prediction error:', error);
@@ -100,18 +105,25 @@ export default async function handler(request: VercelRequest, response: VercelRe
       let version = '';
       const currentStep = step || '1';
       
+      console.log('Processing step:', currentStep);
+      
       if (currentStep === '1') {
+        // 步骤1: 音乐分离
         version = DEMUCS_VERSION;
         input = { audio: songUrl };
+        console.log('Step 1 input:', input);
       } else if (currentStep === '2') {
-        version = SVC_VERSION;
+        // 步骤2: 歌声转换 - 使用用户声音
+        // userVoiceUrl 是用户的录音，我们需要用它来生成歌声
+        // 使用 custom_rvc_model_download_url 来指定用户的音色模型
+        version = VOICE_CLONING_VERSION;
         input = { 
-          source_audio: songUrl,
-          target_singer: 'Taylor Swift',
-          key_shift_mode: 0,
-          pitch_shift_control: 'Auto Shift',
-          diffusion_inference_steps: 1000
+          song_input: songUrl,  // 原始歌曲的人声
+          custom_rvc_model_download_url: userVoiceUrl,  // 用户的声音作为参考
+          pitch_change: 'no-change',
+          output_format: 'mp3'
         };
+        console.log('Step 2 input:', input);
       }
       
       const predId = await createPrediction(version, input);
