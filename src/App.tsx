@@ -289,6 +289,7 @@ export default function App() {
       }
       
       setProgressText('步骤2/3: 转换歌声...');
+      console.log('Starting step 2 with vocalsUrl:', vocalsUrl, 'userVoiceUrl:', recording.audioUrl);
       
       // 步骤2: 歌声转换
       const step2Result = await createPredictionStep(vocalsUrl, recording.audioUrl!, '2');
