@@ -2,14 +2,11 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
-// 步骤1: 音乐分离 (Demucs)
+// 音乐分离
 const DEMUCS_VERSION = 'b84861ae9b787409ef92927b5a07704fda87a0a7762e9bb7b09c517357eadb53';
 
-// 歌声转换 - 使用预置声音
-const VOICE_CLONING_VERSION = '0a9c7c558af4c0f20667c1bd1260ce32a2879944a0b9e44e1398660c077b1550';
-
 async function createPrediction(version: string, input: any): Promise<string> {
-  console.log('Creating prediction with version:', version);
+  console.log('Creating prediction:', version, input);
   const res = await fetch('https://api.replicate.com/v1/predictions', {
     method: 'POST',
     headers: {
@@ -21,41 +18,31 @@ async function createPrediction(version: string, input: any): Promise<string> {
   
   const data = await res.json();
   if (!res.ok) {
-    console.error('Replicate error:', data);
-    throw new Error(data.detail || 'Failed to create prediction');
+    console.error('Error:', data);
+    throw new Error(data.detail || 'Failed');
   }
-  
-  console.log('Prediction created:', data.id);
   return data.id;
 }
 
-async function checkPrediction(id: string): Promise<{ status: string; output: any; error: string }> {
+async function checkPrediction(id: string) {
   const res = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
     headers: { 'Authorization': `Token ${REPLICATE_API_TOKEN}` },
   });
   const data = await res.json();
-  console.log('Prediction status:', id, 'status:', data.status);
   return { status: data.status, output: data.output, error: data.error };
 }
 
-// 代理下载音频文件
 async function proxyAudio(url: string, res: VercelResponse) {
   try {
     const response = await fetch(url);
-    if (!response.ok) {
-      res.status(500).json({ error: 'Failed to fetch audio' });
-      return;
-    }
-    const arrayBuffer = await response.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    const buffer = Buffer.from(await response.arrayBuffer());
     const ext = url.split('.').pop()?.toLowerCase();
     const contentType = ext === 'wav' ? 'audio/wav' : 'audio/mpeg';
     res.setHeader('Content-Type', contentType);
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.send(buffer);
   } catch (error) {
-    console.error('Proxy error:', error);
-    res.status(500).json({ error: 'Failed to proxy audio' });
+    res.status(500).json({ error: 'Failed to proxy' });
   }
 }
 
@@ -68,87 +55,39 @@ export default async function handler(request: VercelRequest, response: VercelRe
     return response.status(200).end();
   }
 
-  // 解析请求体
   let body = request.body;
   if (request.method === 'POST' && typeof request.body === 'string') {
     try { body = JSON.parse(request.body); } catch { body = {}; }
   }
   
-  const { songUrl, userVoiceUrl, step, predictionId, proxy, url } = body || request.query || {};
+  const { songUrl, step, predictionId, proxy, url } = body || request.query || {};
 
   if (request.method === 'GET' && proxy === 'true' && url) {
     await proxyAudio(url as string, response);
     return;
   }
 
-  // 检查预测状态
   if (request.method === 'GET' && predictionId) {
-    try {
-      const result = await checkPrediction(predictionId as string);
-      return response.status(200).json(result);
-    } catch (error) {
-      console.error('Check prediction error:', error);
-      return response.status(500).json({ error: 'Failed to check prediction' });
-    }
+    const result = await checkPrediction(predictionId as string);
+    return response.status(200).json(result);
   }
 
-  // 训练RVC模型 - 直接使用用户音频URL
-  if (request.method === 'POST' && step === 'train') {
-    if (!userVoiceUrl) {
-      return response.status(400).json({ error: 'userVoiceUrl is required' });
-    }
-    
-    try {
-      // 返回用户音频URL作为模型训练输入
-      // 注意：这里需要先把用户音频上传到公开URL
-      return response.status(200).json({ url: userVoiceUrl });
-    } catch (error) {
-      console.error('Train error:', error);
-      return response.status(500).json({ error: error instanceof Error ? error.message : 'Failed to train' });
-    }
-  }
-
-  // 创建预测
   if (request.method === 'POST') {
-    if (!REPLICATE_API_TOKEN) {
-      return response.status(500).json({ error: 'REPLICATE_API_TOKEN is not set' });
-    }
-
     if (!songUrl) {
       return response.status(400).json({ error: 'songUrl is required' });
     }
 
     try {
-      let input: any = {};
-      let version = '';
-      const currentStep = step || '1';
-      
-      console.log('Processing step:', currentStep);
-      
-      if (currentStep === '1') {
-        // 步骤1: 音乐分离
-        version = DEMUCS_VERSION;
-        input = { audio: songUrl };
-        console.log('Step 1 input:', input);
-      } else if (currentStep === '2') {
-        // 步骤2: 歌声转换 - 使用预置声音
-        // 由于无法直接使用用户声音训练，我们先用预设声音
-        version = VOICE_CLONING_VERSION;
-        input = {
-          source_audio: songUrl,
-          target_singer: 'Taylor Swift', // 使用预置声音
-          key_shift_mode: 0,
-          pitch_shift_control: 'Auto Shift',
-          diffusion_inference_steps: 1000
-        };
-        console.log('Step 2 input:', input);
-      }
+      // 步骤1: 音乐分离
+      const version = DEMUCS_VERSION;
+      const input = { audio: songUrl };
+      console.log('Step 1 input:', input);
       
       const predId = await createPrediction(version, input);
       return response.status(200).json({ predictionId: predId, status: 'starting' });
     } catch (error) {
       console.error('Error:', error);
-      return response.status(500).json({ error: error instanceof Error ? error.message : 'Failed to create prediction' });
+      return response.status(500).json({ error: error instanceof Error ? error.message : 'Failed' });
     }
   }
 

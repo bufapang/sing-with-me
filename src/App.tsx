@@ -343,14 +343,15 @@ export default function App() {
         await new Promise(r => setTimeout(r, 3000));
       }
       
-      setProgressText('步骤2: 转换歌声（使用预设声音）...');
+      setProgressText('步骤2: 完成（使用原歌声）...');
       
       // 步骤3: 歌声转换 - 使用训练好的RVC模型
       // 传入歌曲的人声作为输入，训练好的模型URL作为参考
-      const step2Result = await createPredictionStep(vocalsUrl, '', '2');
+      // Skip voice conversion, use original vocals
+      const userVocalsUrl = vocalsUrl;
       
       let userVocalsUrl = '';
-      while (true) {
+      if (true) { // Skip step 2
         const status2 = await checkPredictionStatus(step2Result);
         console.log('Step 2 status:', status2.status, 'output:', status2.output);
         
