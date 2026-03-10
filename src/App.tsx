@@ -338,6 +338,12 @@ export default function App() {
           }
           
           console.log('vocalsUrl:', vocalsUrl, 'accompanimentUrl:', accompanimentUrl);
+          
+          // 如果没有伴奏，使用原歌作为伴奏
+          if (!accompanimentUrl) {
+            accompanimentUrl = selectedSong.url;
+            console.log('No accompaniment separated, using original song');
+          }
           break;
         } else if (status1.status === 'failed') {
           console.error('Step 1 failed:', status1.error);
