@@ -344,7 +344,7 @@ export default function App() {
       }
       
       setProgressText('步骤2: 转换歌声（使用预设声音）...');
-      console.log('Starting voice conversion with vocalsUrl:', vocalsUrl, 'trainedModelUrl:', trainedModelUrl);
+      console.log('Starting voice conversion with vocalsUrl:', vocalsUrl, ''':', trainedModelUrl);
       
       // 步骤3: 歌声转换 - 使用训练好的RVC模型
       // 传入歌曲的人声作为输入，训练好的模型URL作为参考
