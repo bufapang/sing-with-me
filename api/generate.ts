@@ -64,57 +64,59 @@ async function proxyAudio(url: string, res: VercelResponse) {
   }
 }
 
-// 上传文件到公开URL (使用 Replicate 的上传功能)
+// 上传文件到Replicate
 async function uploadToReplicate(filePath: string, filename: string): Promise<string> {
-  console.log('Uploading file to Replicate:', filePath);
+  console.log('Uploading to Replicate:', filePath);
   
-  try {
-    let uint8Array: Uint8Array;
-    
-    // 检查是否是本地文件路径
-    if (filePath.startsWith('/tmp/') || filePath.startsWith('/')) {
-      // 读取本地文件
-      console.log('Reading local file:', filePath);
-      const fileBuffer = fs.readFileSync(filePath);
-      uint8Array = new Uint8Array(fileBuffer);
-    } else {
-      // 是URL，先下载
-      console.log('Fetching from URL:', filePath);
-      const response = await fetch(filePath);
-      if (!response.ok) {
-        throw new Error(`Failed to fetch file: ${response.status}`);
-      }
-      const buffer = await response.arrayBuffer();
-      uint8Array = new Uint8Array(buffer);
-    }
-    
-    // 使用正确的上传端点
-    console.log('Uploading to Replicate, size:', uint8Array.length);
-    
-    // 方法1: 直接用 multipart form
-    const formData = new FormData();
-    formData.append('file', new Blob([uint8Array], { type: 'audio/wav' }), filename);
-    
-    const uploadRes = await fetch('https://api.replicate.com/v1/files', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Token ${REPLICATE_API_TOKEN}`,
-      },
-      body: formData
-    });
-    
-    const uploadResult = await uploadRes.json();
-    console.log('Upload result:', uploadResult);
-    
-    if (!uploadRes.ok) {
-      throw new Error('Failed to upload: ' + JSON.stringify(uploadResult));
-    }
-    
-    return uploadResult.url;
-  } catch (error) {
-    console.error('Upload error:', error);
-    throw error;
+  // 读取文件
+  let fileBuffer: Buffer;
+  if (filePath.startsWith('/tmp/') || filePath.startsWith('/')) {
+    fileBuffer = fs.readFileSync(filePath);
+  } else {
+    // 从URL下载
+    const response = await fetch(filePath);
+    const arrayBuffer = await response.arrayBuffer();
+    fileBuffer = Buffer.from(arrayBuffer);
   }
+  
+  console.log('File size:', fileBuffer.length);
+  
+  // 方法1: 通过复制已有文件格式
+  // Replicate支持直接通过URL训练，所以我们可以尝试创建一个简单的解决方案
+  // 保存到临时位置并通过Replicate的input传递
+  
+  // 方法2: 使用 multipart upload 到 files endpoint
+  const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
+  const bodyParts = [
+    `--${boundary}\r\n`,
+    `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n`,
+    `Content-Type: audio/wav\r\n\r\n`,
+  ];
+  
+  const bodyStart = Buffer.from(bodyParts.join(''));
+  const bodyEnd = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const body = Buffer.concat([bodyStart, fileBuffer, bodyEnd]);
+  
+  const uploadRes = await fetch('https://api.replicate.com/v1/files', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${REPLICATE_API_TOKEN}`,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    },
+    body: body
+  });
+  
+  const uploadData = await uploadRes.json();
+  console.log('Upload response:', uploadData);
+  
+  if (!uploadRes.ok) {
+    // 尝试直接传递base64给训练API
+    console.log('Direct upload failed, trying alternative...');
+    const base64 = fileBuffer.toString('base64');
+    return `data:audio/wav;base64,${base64}`;
+  }
+  
+  return uploadData.url;
 }
 
 export default async function handler(request: VercelRequest, response: VercelResponse) {
@@ -156,27 +158,27 @@ export default async function handler(request: VercelRequest, response: VercelRe
       let audioBuffer: Buffer;
       
       // 检查是否是base64
-      if (userVoiceUrl.startsWith('data:') || /^[A-Za-z0-9+/=]+$/.test(userVoiceUrl.substring(0, 100))) {
-        // 是base64，解码它
+      if (typeof userVoiceUrl === 'string' && (userVoiceUrl.startsWith('data:') || userVoiceUrl.length > 200)) {
         console.log('Received base64 audio');
         const base64Data = userVoiceUrl.includes(',') ? userVoiceUrl.split(',')[1] : userVoiceUrl;
         audioBuffer = Buffer.from(base64Data, 'base64');
       } else {
         // 是URL，下载它
         console.log('Fetching audio from URL:', userVoiceUrl);
-        const fetchRes = await fetch(userVoiceUrl);
+        const fetchRes = await fetch(userVoiceUrl as string);
         const arrayBuffer = await fetchRes.arrayBuffer();
         audioBuffer = Buffer.from(arrayBuffer);
       }
       
       // 保存到临时文件
-      
-      
       const tempPath = '/tmp/user_voice.wav';
       fs.writeFileSync(tempPath, audioBuffer);
+      console.log('Saved to:', tempPath);
       
       // 上传到Replicate
       const uploadedUrl = await uploadToReplicate(tempPath, 'user_voice.wav');
+      console.log('Uploaded URL:', uploadedUrl);
+      
       return response.status(200).json({ url: uploadedUrl });
     } catch (error) {
       console.error('Upload error:', error);
@@ -202,24 +204,21 @@ export default async function handler(request: VercelRequest, response: VercelRe
       console.log('Processing step:', currentStep);
       
       if (currentStep === 'train') {
-        // 训练RVC模型 - userVoiceUrl 应该是已经上传到公开URL的用户音频
+        // 训练RVC模型
         version = TRAIN_RVC_VERSION;
         input = {
-          dataset_zip: userVoiceUrl,  // 用户音频的URL（已上传）
+          dataset_zip: userVoiceUrl,
           sample_rate: '48k',
           version: 'v2',
           f0method: 'rmvpe_gpu',
           epoch: 10,
           batch_size: '7'
         };
-        console.log('Training RVC model with input:', input);
+        console.log('Training RVC model with input');
       } else if (currentStep === '1') {
-        // 步骤1: 音乐分离
         version = DEMUCS_VERSION;
         input = { audio: songUrl };
-        console.log('Step 1 input:', input);
       } else if (currentStep === '2') {
-        // 步骤2: 歌声转换 - 使用训练好的RVC模型
         version = VOICE_CLONING_VERSION;
         input = {
           song_input: songUrl,
@@ -228,7 +227,6 @@ export default async function handler(request: VercelRequest, response: VercelRe
           pitch_change: 'no-change',
           output_format: 'mp3'
         };
-        console.log('Step 2 input:', input);
       }
       
       const predId = await createPrediction(version, input);
