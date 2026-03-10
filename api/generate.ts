@@ -65,17 +65,28 @@ async function proxyAudio(url: string, res: VercelResponse) {
 }
 
 // 上传文件到公开URL (使用 Replicate 的上传功能)
-async function uploadToReplicate(fileUrl: string, filename: string): Promise<string> {
-  console.log('Uploading file to Replicate:', filename);
+async function uploadToReplicate(filePath: string, filename: string): Promise<string> {
+  console.log('Uploading file to Replicate:', filePath);
   
   try {
-    // 先下载文件
-    const response = await fetch(fileUrl);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch file: ${response.status}`);
+    let uint8Array: Uint8Array;
+    
+    // 检查是否是本地文件路径
+    if (filePath.startsWith('/tmp/') || filePath.startsWith('/')) {
+      // 读取本地文件
+      console.log('Reading local file:', filePath);
+      const fileBuffer = fs.readFileSync(filePath);
+      uint8Array = new Uint8Array(fileBuffer);
+    } else {
+      // 是URL，先下载
+      console.log('Fetching from URL:', filePath);
+      const response = await fetch(filePath);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch file: ${response.status}`);
+      }
+      const buffer = await response.arrayBuffer();
+      uint8Array = new Uint8Array(buffer);
     }
-    const buffer = await response.arrayBuffer();
-    const uint8Array = new Uint8Array(buffer);
     
     // 第一步：创建上传
     const createUploadRes = await fetch('https://api.replicate.com/v1/uploads', {
