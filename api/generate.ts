@@ -68,11 +68,15 @@ export default async function handler(request: VercelRequest, response: VercelRe
     return response.status(200).end();
   }
 
-  const { songUrl, userVoiceUrl, step, predictionId, proxy, url } = request.body || request.query;
+  // 解析请求体
+  let body = request.body;
+  if (request.method === 'POST' && typeof request.body === 'string') {
+    try { body = JSON.parse(request.body); } catch { body = {}; }
+  }
+  
+  const { songUrl, userVoiceUrl, step, predictionId, proxy, url } = body || request.query || {};
 
-  // 音频代理
   if (request.method === 'GET' && proxy === 'true' && url) {
-    console.log('Proxying audio:', url);
     await proxyAudio(url as string, response);
     return;
   }
