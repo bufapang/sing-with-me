@@ -347,14 +347,7 @@ export default function App() {
       
       // Skip voice conversion, use original vocals directly
       const userVocalsUrl = vocalsUrl;
-      console.log('Using original vocals:', userVocalsUrl); else if (status2.status === 'failed') {
-          throw new Error('歌声转换失败: ' + (status2.error || ''));
-        } else if (status2.status === 'processing') {
-          console.log('Step 2 still processing, waiting...');
-        }
-        
-        await new Promise(r => setTimeout(r, 3000));
-      }
+      console.log('Using original vocals:', userVocalsUrl);
       
       setProgressText('步骤3: 混音（使用预设声音）合成...');
       
