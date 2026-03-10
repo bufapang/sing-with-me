@@ -1,31 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import OSS from 'ali-oss';
+
+// 动态导入 ali-oss
+const getOSS = () => require('ali-oss');
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
-// OSS配置 - 从环境变量读取
+// OSS配置
 const OSS_REGION = process.env.OSS_REGION || 'oss-cn-hangzhou';
 const OSS_BUCKET = process.env.OSS_BUCKET || 'sing-with-me-shu';
 const OSS_ACCESS_KEY_ID = process.env.OSS_ACCESS_KEY_ID || '';
 const OSS_ACCESS_KEY_SECRET = process.env.OSS_ACCESS_KEY_SECRET || '';
-
-// 初始化OSS客户端
-let ossClient: OSS | null = null;
-
-function getOSSClient(): OSS {
-  if (!ossClient) {
-    if (!OSS_ACCESS_KEY_ID || !OSS_ACCESS_KEY_SECRET) {
-      throw new Error('OSS credentials not configured');
-    }
-    ossClient = new OSS({
-      region: OSS_REGION,
-      bucket: OSS_BUCKET,
-      accessKeyId: OSS_ACCESS_KEY_ID,
-      accessKeySecret: OSS_ACCESS_KEY_SECRET,
-    });
-  }
-  return ossClient;
-}
 
 // 音乐分离
 const DEMUCS_VERSION = 'b84861ae9b787409ef92927b5a07704fda87a0a7762e9bb7b09c517357eadb53';
@@ -79,7 +63,13 @@ async function proxyAudio(url: string, res: VercelResponse) {
 
 async function uploadToOSS(base64Data: string, filename: string): Promise<string> {
   console.log('Uploading to OSS:', filename);
-  const client = getOSSClient();
+  const OSS = getOSS();
+  const client = new OSS({
+    region: OSS_REGION,
+    bucket: OSS_BUCKET,
+    accessKeyId: OSS_ACCESS_KEY_ID,
+    accessKeySecret: OSS_ACCESS_KEY_SECRET,
+  });
   const buffer = Buffer.from(base64Data, 'base64');
   const result = await client.put(`voices/${filename}`, buffer);
   console.log('OSS upload result:', result.url);
