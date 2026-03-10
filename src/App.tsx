@@ -107,21 +107,41 @@ export default function App() {
   };
 
   // 上传用户音频到公开URL
+  // Convert audio blob to base64
+  const audioToBase64 = async (url: string): Promise<string> => {
+    const response = await fetch(url);
+    const blob = await response.blob();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64 = reader.result as string;
+        resolve(base64.split(',')[1]); // Remove data URL prefix
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  };
+  
   const uploadUserVoice = async (audioUrl: string): Promise<string> => {
     console.log('Uploading user voice for training...');
     console.log('Audio URL:', audioUrl);
-    console.log('Audio URL type:', typeof audioUrl);
-    console.log('Audio URL length:', audioUrl?.length);
     
     if (!audioUrl) {
       throw new Error('No audio recorded');
     }
     
     try {
+      // Convert audio to base64 in frontend
+      console.log('Converting audio to base64...');
+      const base64Audio = await audioToBase64(audioUrl);
+      console.log('Base64 length:', base64Audio.length);
+      
+      // Send base64 to backend
+      console.log('Sending to backend...');
       const response = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userVoiceUrl: audioUrl, step: 'upload' }),
+        body: JSON.stringify({ userVoiceUrl: base64Audio, step: 'upload' }),
       });
       
       console.log('Upload response status:', response.status);

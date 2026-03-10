@@ -153,8 +153,30 @@ export default async function handler(request: VercelRequest, response: VercelRe
     }
     
     try {
-      // 上传用户音频到Replicate
-      const uploadedUrl = await uploadToReplicate(userVoiceUrl, 'user_voice.wav');
+      let audioBuffer: Buffer;
+      
+      // 检查是否是base64
+      if (userVoiceUrl.startsWith('data:') || /^[A-Za-z0-9+/=]+$/.test(userVoiceUrl.substring(0, 100))) {
+        // 是base64，解码它
+        console.log('Received base64 audio');
+        const base64Data = userVoiceUrl.includes(',') ? userVoiceUrl.split(',')[1] : userVoiceUrl;
+        audioBuffer = Buffer.from(base64Data, 'base64');
+      } else {
+        // 是URL，下载它
+        console.log('Fetching audio from URL:', userVoiceUrl);
+        const fetchRes = await fetch(userVoiceUrl);
+        const arrayBuffer = await fetchRes.arrayBuffer();
+        audioBuffer = Buffer.from(arrayBuffer);
+      }
+      
+      // 保存到临时文件
+      const fs = require('fs');
+      const path = require('path');
+      const tempPath = '/tmp/user_voice.wav';
+      fs.writeFileSync(tempPath, audioBuffer);
+      
+      // 上传到Replicate
+      const uploadedUrl = await uploadToReplicate(tempPath, 'user_voice.wav');
       return response.status(200).json({ url: uploadedUrl });
     } catch (error) {
       console.error('Upload error:', error);
