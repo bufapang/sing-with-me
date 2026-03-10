@@ -284,59 +284,9 @@ export default function App() {
     setProgressText('正在创建 AI 任务...');
 
     try {
-      // ========== 步骤0: 训练RVC模型 ==========
-      setProgressText('步骤0: 上传用户声音并训练AI模型（约6分钟）...');
-      console.log('Step 0: Training RVC model with user voice:', recording.audioUrl);
-      
-      // 将用户录音转为base64
-      let userVoiceBase64 = '';
-      if (recording.audioUrl) {
-        const response = await fetch(recording.audioUrl);
-        const blob = await response.blob();
-        userVoiceBase64 = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(blob);
-        });
-      }
-      
-      // 调用训练API
-      const trainResult = await createPredictionStep('', userVoiceBase64, 'train');
-      console.log('Training prediction ID:', trainResult);
-      
-      let trainedModelUrl = '';
-      let trainAttempts = 0;
-      
-      // 等待训练完成（最多15分钟）
-      while (trainAttempts < 300) {
-        trainAttempts++;
-        const trainStatus = await checkPredictionStatus(trainResult);
-        console.log('Training status:', trainStatus.status, 'attempt:', trainAttempts);
-        
-        if (trainStatus.status === 'succeeded' && trainStatus.output) {
-          const out = trainStatus.output;
-          // 训练完成后，output包含模型信息
-          if (typeof out === 'string') {
-            trainedModelUrl = out;
-          } else if (out && typeof out === 'object') {
-            trainedModelUrl = out.url || out.model_url || out[0]?.url || '';
-          }
-          console.log('Trained model URL:', trainedModelUrl);
-          break;
-        } else if (trainStatus.status === 'failed') {
-          throw new Error('训练失败: ' + (trainStatus.error || ''));
-        }
-        
-        if (trainAttempts % 10 === 0) {
-          setProgressText(`步骤0: 训练中...（${Math.floor(trainAttempts * 3 / 60)}分钟）`);
-        }
-        
-        await new Promise(r => setTimeout(r, 3000));
-      }
-      
-      if (!trainedModelUrl) {
-        throw new Error('训练超时，未能获取模型');
-      }
+      // 跳过训练，直接使用预设声音模型 (Squidward)
+      const trainedModelUrl = 'Squidward';
+      console.log('Using preset model:', trainedModelUrl);
       
       // ========== 步骤1: 音乐分离 ==========
       setProgressText('步骤1: 分离人声和伴奏...');
