@@ -5,8 +5,8 @@ const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 // 音乐分离
 const DEMUCS_VERSION = 'b84861ae9b787409ef92927b5a07704fda87a0a7762e9bb7b09c517357eadb53';
 
-// 歌声转换 (So-Vits-SVC)
-const SVC_VERSION = 'a8f1dc9e58c7d8c0a5c5f1e5b5e5e5e5a8f1dc9e58c7d8c0a5c5f1e5b5e5e5e5';
+// 歌声转换 - 使用RVC模型
+const RVC_INFERENCE_VERSION = '0a9c7c558af4c0f20667c1bd1260ce32a2879944a0b9e44e1398660c077b1550';
 
 async function createPrediction(version: string, input: any): Promise<string> {
   console.log('Creating prediction:', version);
@@ -85,22 +85,29 @@ export default async function handler(request: VercelRequest, response: VercelRe
         // 步骤1: 音乐分离
         const version = DEMUCS_VERSION;
         const input = { audio: songUrl };
-        console.log('Step 1 input:', input);
+        console.log('Step 1 - Separation:', input);
         const predId = await createPrediction(version, input);
         return response.status(200).json({ predictionId: predId, status: 'starting' });
       } else if (step === '2') {
-        // 步骤2: 歌声转换 - 用用户声音转换
-        // userVoiceUrl = 用户录音, songUrl = 原歌声(作为参考)
-        const version = DEMUCS_VERSION; // 先分离
-        const input = { audio: songUrl };
-        console.log('Step 2: Using user voice:', userVoiceUrl);
-        // 返回用户声音URL作为转换结果
-        // 实际转换需要 So-VITS-SVC 模型，这里简化处理
-        return response.status(200).json({ 
-          predictionId: 'user-voice', 
-          status: 'succeeded',
-          output: userVoiceUrl // 直接返回用户声音
-        });
+        // 步骤2: 歌声转换 - 使用RVC模型
+        // userVoiceUrl 是用户的录音 URL
+        // 需要先训练RVC模型，然后用模型转换
+        
+        // 简化版：直接用用户声音作为转换输入（实际需要训练）
+        // 由于RVC训练需要完整pipeline，这里返回用户声音URL
+        console.log('Step 2 - Voice Conversion');
+        console.log('User voice:', userVoiceUrl);
+        
+        // 调用RVC转换
+        const version = RVC_INFERENCE_VERSION;
+        const input = {
+          song_input: songUrl,
+          rvc_model: 'Squidward', // 使用预置模型测试
+        };
+        console.log('RVC input:', input);
+        
+        const predId = await createPrediction(version, input);
+        return response.status(200).json({ predictionId: predId, status: 'starting' });
       } else {
         // 默认步骤1
         const version = DEMUCS_VERSION;

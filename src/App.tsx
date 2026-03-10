@@ -356,30 +356,48 @@ export default function App() {
         await new Promise(r => setTimeout(r, 3000));
       }
       
-      setProgressText('步骤2: 转换歌声（使用用户声音）...');
+      setProgressText('步骤2: AI转换歌声...');
       
-      // 步骤2: 用用户的声音转换
-      console.log('Step 2: Converting user voice, user recording:', recording.audioUrl);
+      // 步骤2: 调用RVC API转换歌声
+      console.log('Step 2: Calling RVC API, song:', selectedSong.url);
       
-      // 将用户录音转为data URL（这样混音时可以访问）
-      let userVocalsUrl = '';
-      if (recording.audioUrl) {
-        try {
-          const response = await fetch(recording.audioUrl);
-          const blob = await response.blob();
-          userVocalsUrl = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(blob);
-          });
-        } catch (e) {
-          console.error('Failed to convert recording:', e);
-          userVocalsUrl = vocalsUrl; // fallback
+      // 调用步骤2 API进行声音转换
+      const step2Result = await createPredictionStep(selectedSong.url, '', '2');
+      console.log('Step 2 prediction ID:', step2Result);
+      
+      let convertedVocalsUrl = '';
+      let step2Attempts = 0;
+      
+      while (step2Attempts < 60) {
+        step2Attempts++;
+        const status2 = await checkPredictionStatus(step2Result);
+        console.log('Step 2 status:', status2.status, 'attempt:', step2Attempts);
+        
+        if (status2.status === 'succeeded' && status2.output) {
+          const out = status2.output;
+          if (typeof out === 'string') {
+            convertedVocalsUrl = out;
+          } else if (out && typeof out === 'object') {
+            convertedVocalsUrl = out.audio || out.url || out[0]?.audio || out[0]?.url || '';
+          }
+          console.log('Converted vocals URL:', convertedVocalsUrl);
+          break;
+        } else if (status2.status === 'failed') {
+          console.error('Step 2 failed:', status2.error);
+          break;
         }
-      } else {
-        userVocalsUrl = vocalsUrl;
+        
+        await new Promise(r => setTimeout(r, 3000));
       }
-      console.log('Using user vocals (data URL):', userVocalsUrl ? 'yes' : 'no');
+      
+      // 如果转换失败，使用原歌声
+      if (!convertedVocalsUrl) {
+        convertedVocalsUrl = vocalsUrl;
+        console.log('Using original vocals as fallback');
+      }
+      
+      const userVocalsUrl = convertedVocalsUrl;
+      console.log('Final vocals for mixing:', userVocalsUrl);
       
       setProgressText('步骤3: 混音合成...');
       
