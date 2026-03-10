@@ -123,33 +123,30 @@ async function createTrainingZipFromUrl(audioUrl: string): Promise<string> {
 
 // 上传训练文件
 async function uploadTrainingFile(zipPath: string): Promise<string> {
+  console.log('Uploading training file from:', zipPath);
   const fileBuffer = fs.readFileSync(zipPath);
-  const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
+  console.log('File size:', fileBuffer.length);
   
-  const bodyParts = [
-    `--${boundary}\r\n`,
-    `Content-Disposition: form-data; name="file"; filename="dataset.zip"\r\n`,
-    `Content-Type: application/zip\r\n\r\n`,
-  ];
-  
-  const bodyStart = Buffer.from(bodyParts.join(''));
-  const bodyEnd = Buffer.from(`\r\n--${boundary}--\r\n`);
-  const body = Buffer.concat([bodyStart, fileBuffer, bodyEnd]);
+  // 使用 FormData
+  const formData = new FormData();
+  const blob = new Blob([fileBuffer], { type: 'application/zip' });
+  formData.append('file', blob, 'dataset.zip');
   
   const uploadRes = await fetch('https://api.replicate.com/v1/files', {
     method: 'POST',
     headers: {
       'Authorization': `Token ${REPLICATE_API_TOKEN}`,
-      'Content-Type': `multipart/form-data; boundary=${boundary}`,
     },
-    body: body
+    body: formData
   });
   
   const uploadData = await uploadRes.json();
-  console.log('Training file upload result:', uploadData);
+  console.log('Upload response status:', uploadRes.status);
+  console.log('Upload result:', JSON.stringify(uploadData));
   
   if (!uploadRes.ok) {
-    throw new Error('Upload training file failed');
+    console.error('Upload failed:', uploadData);
+    throw new Error('Upload training file failed: ' + JSON.stringify(uploadData));
   }
   
   return uploadData.url;
