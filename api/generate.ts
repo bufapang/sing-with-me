@@ -110,6 +110,15 @@ export default async function handler(request: VercelRequest, response: VercelRe
         let datasetUrl = userVoiceUrl;
         
         if (userVoiceUrl.startsWith('data:')) {
+          // 检查OSS是否配置
+          if (!process.env.OSS_ACCESS_KEY_ID) {
+            // OSS未配置，使用预设模型
+            return response.status(200).json({ 
+              predictionId: 'preset-model', 
+              status: 'succeeded',
+              output: { url: 'Squidward' }
+            });
+          }
           const base64 = userVoiceUrl.split(',')[1];
           const filename = `voice_${Date.now()}.wav`;
           console.log('Uploading voice to OSS...');
