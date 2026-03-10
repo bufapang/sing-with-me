@@ -88,42 +88,29 @@ async function uploadToReplicate(filePath: string, filename: string): Promise<st
       uint8Array = new Uint8Array(buffer);
     }
     
-    // 第一步：创建上传
-    const createUploadRes = await fetch('https://api.replicate.com/v1/uploads', {
+    // 使用正确的上传端点
+    console.log('Uploading to Replicate, size:', uint8Array.length);
+    
+    // 方法1: 直接用 multipart form
+    const formData = new FormData();
+    formData.append('file', new Blob([uint8Array], { type: 'audio/wav' }), filename);
+    
+    const uploadRes = await fetch('https://api.replicate.com/v1/files', {
       method: 'POST',
       headers: {
         'Authorization': `Token ${REPLICATE_API_TOKEN}`,
-        'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        name: filename,
-        size: uint8Array.length,
-        content_type: 'audio/wav'
-      })
+      body: formData
     });
     
-    const uploadInfo = await createUploadRes.json();
-    console.log('Upload info:', uploadInfo);
-    
-    if (!createUploadRes.ok) {
-      throw new Error('Failed to create upload: ' + JSON.stringify(uploadInfo));
-    }
-    
-    // 第二步：上传文件到获得的URL
-    const uploadRes = await fetch(uploadInfo.upload_url, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/octet-stream',
-      },
-      body: uint8Array
-    });
+    const uploadResult = await uploadRes.json();
+    console.log('Upload result:', uploadResult);
     
     if (!uploadRes.ok) {
-      throw new Error('Failed to upload file content');
+      throw new Error('Failed to upload: ' + JSON.stringify(uploadResult));
     }
     
-    console.log('File uploaded successfully, URL:', uploadInfo.url);
-    return uploadInfo.url;
+    return uploadResult.url;
   } catch (error) {
     console.error('Upload error:', error);
     throw error;
