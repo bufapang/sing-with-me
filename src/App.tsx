@@ -175,8 +175,15 @@ export default function App() {
       const audioContext = new AudioContext();
       
       const loadAudio = async (url: string) => {
-        const proxyUrl = `/api/generate?proxy=true&url=${encodeURIComponent(url)}`;
-        const response = await fetch(proxyUrl);
+        let audioUrl = url;
+        // 如果是data URL或blob URL，直接使用
+        if (url.startsWith('data:') || url.startsWith('blob:')) {
+          audioUrl = url;
+        } else {
+          // 否则通过代理
+          audioUrl = `/api/generate?proxy=true&url=${encodeURIComponent(url)}`;
+        }
+        const response = await fetch(audioUrl);
         const arrayBuffer = await response.arrayBuffer();
         return await audioContext.decodeAudioData(arrayBuffer);
       };
@@ -348,9 +355,25 @@ export default function App() {
       // 步骤2: 用用户的声音转换
       console.log('Step 2: Converting user voice, user recording:', recording.audioUrl);
       
-      // 直接使用用户录音（简化处理）
-      const userVocalsUrl = recording.audioUrl || vocalsUrl;
-      console.log('Using user vocals:', userVocalsUrl);
+      // 将用户录音转为data URL（这样混音时可以访问）
+      let userVocalsUrl = '';
+      if (recording.audioUrl) {
+        try {
+          const response = await fetch(recording.audioUrl);
+          const blob = await response.blob();
+          userVocalsUrl = await new Promise<string>((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+        } catch (e) {
+          console.error('Failed to convert recording:', e);
+          userVocalsUrl = vocalsUrl; // fallback
+        }
+      } else {
+        userVocalsUrl = vocalsUrl;
+      }
+      console.log('Using user vocals (data URL):', userVocalsUrl ? 'yes' : 'no');
       
       setProgressText('步骤3: 混音合成...');
       
