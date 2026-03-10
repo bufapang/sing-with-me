@@ -15,7 +15,7 @@ const DEMUCS_VERSION = 'b84861ae9b787409ef92927b5a07704fda87a0a7762e9bb7b09c5173
 const RVC_INFER_VERSION = '0a9c7c558af4c0f20667c1bd1260ce32a2879944a0b9e44e1398660c077b1550';
 
 // RVC训练
-const RVC_TRAIN_VERSION = 'cf360587a27f67500c30fc31de1e0f0f9aa26dcd7b866e6ac937a07bd104bad9';
+const RVC_TRAIN_VERSION = '0397d5e28c9b54665e1e5d29d5cf4f722a7b89ec20e9dbf31487235305b1a101';
 
 async function createPrediction(version: string, input: any): Promise<string> {
   console.log('Creating prediction:', version);
