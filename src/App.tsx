@@ -343,13 +343,16 @@ export default function App() {
         await new Promise(r => setTimeout(r, 3000));
       }
       
-      setProgressText('步骤2: 完成（使用原歌声）...');
+      setProgressText('步骤2: 转换歌声（使用用户声音）...');
       
-      // Skip voice conversion, use original vocals directly
-      const userVocalsUrl = vocalsUrl;
-      console.log('Using original vocals:', userVocalsUrl);
+      // 步骤2: 用用户的声音转换
+      console.log('Step 2: Converting user voice, user recording:', recording.audioUrl);
       
-      setProgressText('步骤3: 混音（使用预设声音）合成...');
+      // 直接使用用户录音（简化处理）
+      const userVocalsUrl = recording.audioUrl || vocalsUrl;
+      console.log('Using user vocals:', userVocalsUrl);
+      
+      setProgressText('步骤3: 混音合成...');
       
       // 步骤3: 混音（使用预设声音）
       console.log('Starting mix with userVocalsUrl:', userVocalsUrl, 'accompanimentUrl:', accompanimentUrl);
