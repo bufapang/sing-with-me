@@ -345,26 +345,9 @@ export default function App() {
       
       setProgressText('步骤2: 完成（使用原歌声）...');
       
-      // 步骤3: 歌声转换 - 使用训练好的RVC模型
-      // 传入歌曲的人声作为输入，训练好的模型URL作为参考
-      // Skip voice conversion, use original vocals
+      // Skip voice conversion, use original vocals directly
       const userVocalsUrl = vocalsUrl;
-      
-      let userVocalsUrl = '';
-      if (true) { // Skip step 2
-        const status2 = await checkPredictionStatus(step2Result);
-        console.log('Step 2 status:', status2.status, 'output:', status2.output);
-        
-        if (status2.status === 'succeeded' && status2.output) {
-          const out = status2.output;
-          if (typeof out === 'string') {
-            userVocalsUrl = out;
-          } else if (out && typeof out === 'object') {
-            userVocalsUrl = out.audio || out.url || out[0]?.audio || '';
-          }
-          console.log('userVocalsUrl extracted:', userVocalsUrl);
-          break;
-        } else if (status2.status === 'failed') {
+      console.log('Using original vocals:', userVocalsUrl); else if (status2.status === 'failed') {
           throw new Error('歌声转换失败: ' + (status2.error || ''));
         } else if (status2.status === 'processing') {
           console.log('Step 2 still processing, waiting...');
