@@ -1,8 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// 动态导入 ali-oss
-const getOSS = () => require('ali-oss');
-
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
 // OSS配置
@@ -63,13 +60,16 @@ async function proxyAudio(url: string, res: VercelResponse) {
 
 async function uploadToOSS(base64Data: string, filename: string): Promise<string> {
   console.log('Uploading to OSS:', filename);
-  const OSS = getOSS();
-  const client = new OSS({
+  
+  // 动态导入 ali-oss
+  const AliOSS = await import('ali-oss');
+  const client = new AliOSS.default({
     region: OSS_REGION,
     bucket: OSS_BUCKET,
     accessKeyId: OSS_ACCESS_KEY_ID,
     accessKeySecret: OSS_ACCESS_KEY_SECRET,
   });
+  
   const buffer = Buffer.from(base64Data, 'base64');
   const result = await client.put(`voices/${filename}`, buffer);
   console.log('OSS upload result:', result.url);
