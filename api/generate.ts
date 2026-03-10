@@ -71,6 +71,10 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
 
   if (request.method === 'GET' && predictionId) {
+    // 处理预设模型的特殊情况
+    if (predictionId === 'preset-model') {
+      return response.status(200).json({ status: 'succeeded', output: 'Squidward', error: null });
+    }
     const result = await checkPrediction(predictionId as string);
     return response.status(200).json(result);
   }
