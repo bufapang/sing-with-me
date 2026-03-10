@@ -1,4 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import fs from 'fs';
+import path from 'path';
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
@@ -170,8 +172,8 @@ export default async function handler(request: VercelRequest, response: VercelRe
       }
       
       // 保存到临时文件
-      const fs = require('fs');
-      const path = require('path');
+      
+      
       const tempPath = '/tmp/user_voice.wav';
       fs.writeFileSync(tempPath, audioBuffer);
       
