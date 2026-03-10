@@ -277,60 +277,8 @@ export default function App() {
     setProgressText('正在创建 AI 任务...');
 
     try {
-      // 步骤0: 上传用户声音并训练RVC模型
-      setProgressText('步骤1/4: 上传用户声音...');
-      console.log('Uploading user voice for training:', recording.audioUrl);
-      
-      // 先上传用户音频到公开URL
-      const uploadedVoiceUrl = await uploadUserVoice(recording.audioUrl!);
-      console.log('User voice uploaded, URL:', uploadedVoiceUrl);
-      
-      setProgressText('步骤1/4: 训练声音模型（约需13分钟）...');
-      console.log('Training RVC model with uploaded voice:', uploadedVoiceUrl);
-      
-      // 调用训练API，传入已上传的用户音频URL
-      const trainResult = await createPredictionStep('', uploadedVoiceUrl, 'train');
-      console.log('Training prediction ID:', trainResult);
-      
-      let trainedModelUrl = '';
-      let trainAttempts = 0;
-      
-      // 等待训练完成
-      while (trainAttempts < 300) { // 最多等15分钟
-        trainAttempts++;
-        const trainStatus = await checkPredictionStatus(trainResult);
-        console.log('Training status:', trainStatus.status, 'attempt:', trainAttempts);
-        
-        if (trainStatus.status === 'succeeded' && trainStatus.output) {
-          // 训练完成，output包含训练好的模型信息
-          // 解析模型URL
-          const out = trainStatus.output;
-          if (typeof out === 'string') {
-            trainedModelUrl = out;
-          } else if (out && typeof out === 'object') {
-            // 模型可能在这里面
-            trainedModelUrl = out.model_url || out.url || out[0]?.url || '';
-          }
-          console.log('Trained model URL:', trainedModelUrl);
-          break;
-        } else if (trainStatus.status === 'failed') {
-          throw new Error('声音模型训练失败: ' + (trainStatus.error || ''));
-        }
-        
-        // 每10次打印一次进度
-        if (trainAttempts % 10 === 0) {
-          setProgressText(`步骤1/4: 训练声音模型中...（${Math.floor(trainAttempts * 3 / 60)}分钟）`);
-        }
-        
-        await new Promise(r => setTimeout(r, 3000));
-      }
-      
-      if (!trainedModelUrl) {
-        throw new Error('训练超时，未能获取模型');
-      }
-      
-      // 步骤2: 音乐分离
-      setProgressText('步骤2/4: 分离人声和伴奏...');
+      // 简化流程：跳过训练，直接使用预设声音
+      setProgressText('步骤1/2: 分离人声和伴奏...');
       console.log('Starting step 1 with song:', selectedSong.url);
       const step1Result = await createPredictionStep(selectedSong.url, '', '1');
       console.log('Step 1 prediction ID:', step1Result);
@@ -395,12 +343,12 @@ export default function App() {
         await new Promise(r => setTimeout(r, 3000));
       }
       
-      setProgressText('步骤3/4: 转换歌声...');
+      setProgressText('步骤3: 转换歌声...');
       console.log('Starting voice conversion with vocalsUrl:', vocalsUrl, 'trainedModelUrl:', trainedModelUrl);
       
       // 步骤3: 歌声转换 - 使用训练好的RVC模型
       // 传入歌曲的人声作为输入，训练好的模型URL作为参考
-      const step2Result = await createPredictionStep(vocalsUrl, trainedModelUrl, '2');
+      const step2Result = await createPredictionStep(vocalsUrl, '', '2');
       
       let userVocalsUrl = '';
       while (true) {
@@ -425,7 +373,7 @@ export default function App() {
         await new Promise(r => setTimeout(r, 3000));
       }
       
-      setProgressText('步骤4/4: 混音合成...');
+      setProgressText('步骤4: 混音合成...');
       
       // 步骤3: 混音
       console.log('Starting mix with userVocalsUrl:', userVocalsUrl, 'accompanimentUrl:', accompanimentUrl);
