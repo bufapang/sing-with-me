@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import JSZip from 'jszip';
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
@@ -67,35 +67,23 @@ async function proxyAudio(url: string, res: VercelResponse) {
 
 // 创建zip文件用于训练
 async function createTrainingZip(audioData: Buffer, filename: string): Promise<string> {
-  const tempDir = '/tmp/rvc_training';
-  const datasetDir = path.join(tempDir, 'dataset', 'user_voice');
+  const zip = new JSZip();
   
-  // 创建目录
-  if (!fs.existsSync(datasetDir)) {
-    fs.mkdirSync(datasetDir, { recursive: true });
+  // RVC训练需要特定格式: dataset/<name>/split_*.wav
+  const folder = zip.folder('dataset/user_voice');
+  if (folder) {
+    folder.file(`split_${filename}.wav`, audioData);
   }
   
-  // 保存音频文件
-  const wavPath = path.join(datasetDir, `split_${filename}.wav`);
-  fs.writeFileSync(wavPath, audioData);
+  // 生成zip
+  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
   
-  // 创建zip
+  // 保存zip
   const zipPath = '/tmp/training_dataset.zip';
+  fs.writeFileSync(zipPath, zipBuffer);
+  console.log('Zip created at:', zipPath, 'size:', zipBuffer.length);
   
-  return new Promise((resolve, reject) => {
-    const zip = spawn('zip', ['-j', '-r', zipPath, tempDir]);
-    
-    zip.on('close', (code) => {
-      if (code === 0) {
-        console.log('Zip created at:', zipPath);
-        resolve(zipPath);
-      } else {
-        reject(new Error(`Zip failed with code ${code}`));
-      }
-    });
-    
-    zip.on('error', reject);
-  });
+  return zipPath;
 }
 
 // 上传文件到Replicate
