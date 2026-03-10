@@ -4,6 +4,13 @@ import OSS from 'ali-oss';
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
 // 阿里云OSS配置 - 从环境变量读取
+console.log('OSS env vars:', {
+  region: process.env.OSS_REGION,
+  bucket: process.env.OSS_BUCKET,
+  hasKeyId: !!process.env.OSS_ACCESS_KEY_ID,
+  hasKeySecret: !!process.env.OSS_ACCESS_KEY_SECRET,
+});
+
 const ossClient = new OSS({
   region: process.env.OSS_REGION || 'oss-cn-hangzhou',
   bucket: process.env.OSS_BUCKET || 'sing-with-me-shu',
