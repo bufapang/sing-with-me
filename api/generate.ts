@@ -56,19 +56,11 @@ async function proxyAudio(url: string, res: VercelResponse) {
 }
 
 // 上传文件到Replicate
-async function uploadToReplicate(fileUrl: string): Promise<string> {
-  console.log('Downloading and uploading:', fileUrl);
+async function uploadToReplicate(filePath: string): Promise<string> {
+  console.log('Uploading file to Replicate:', filePath);
   
-  // 下载文件
-  const response = await fetch(fileUrl);
-  const buffer = Buffer.from(await response.arrayBuffer());
-  
-  // 创建临时文件
-  const tempPath = '/tmp/upload_audio';
-  fs.writeFileSync(tempPath, buffer);
-  
-  // 上传到Replicate
-  const fileBuffer = fs.readFileSync(tempPath);
+  // 读取本地文件
+  const fileBuffer = fs.readFileSync(filePath);
   const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
   
   const bodyParts = [
@@ -119,6 +111,14 @@ async function createTrainingZip(audioData: Buffer): Promise<string> {
   console.log('Training zip created, size:', zipBuffer.length);
   
   return zipPath;
+}
+
+// 从URL创建训练zip
+async function createTrainingZipFromUrl(audioUrl: string): Promise<string> {
+  console.log('Downloading audio from:', audioUrl);
+  const response = await fetch(audioUrl);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  return createTrainingZip(buffer);
 }
 
 // 上传训练文件
