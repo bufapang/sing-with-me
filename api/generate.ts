@@ -1,12 +1,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import fs from 'fs';
+import path from 'path';
+import JSZip from 'jszip';
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
 // 音乐分离
 const DEMUCS_VERSION = 'b84861ae9b787409ef92927b5a07704fda87a0a7762e9bb7b09c517357eadb53';
 
-// 歌声转换 - 使用RVC模型
-const RVC_INFERENCE_VERSION = '0a9c7c558af4c0f20667c1bd1260ce32a2879944a0b9e44e1398660c077b1550';
+// RVC训练
+const RVC_TRAIN_VERSION = 'cf360587a27f67500c30fc31de1e0f0f9aa26dcd7b866e6ac937a07bd104bad9';
+
+// RVC推理 - 歌声转换
+const RVC_INFER_VERSION = '0a9c7c558af4c0f20667c1bd1260ce32a2879944a0b9e44e1398660c077b1550';
 
 async function createPrediction(version: string, input: any): Promise<string> {
   console.log('Creating prediction:', version);
@@ -49,6 +55,106 @@ async function proxyAudio(url: string, res: VercelResponse) {
   }
 }
 
+// 上传文件到Replicate
+async function uploadToReplicate(fileUrl: string): Promise<string> {
+  console.log('Downloading and uploading:', fileUrl);
+  
+  // 下载文件
+  const response = await fetch(fileUrl);
+  const buffer = Buffer.from(await response.arrayBuffer());
+  
+  // 创建临时文件
+  const tempPath = '/tmp/upload_audio';
+  fs.writeFileSync(tempPath, buffer);
+  
+  // 上传到Replicate
+  const fileBuffer = fs.readFileSync(tempPath);
+  const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
+  
+  const bodyParts = [
+    `--${boundary}\r\n`,
+    `Content-Disposition: form-data; name="file"; filename="audio.mp3"\r\n`,
+    `Content-Type: audio/mpeg\r\n\r\n`,
+  ];
+  
+  const bodyStart = Buffer.from(bodyParts.join(''));
+  const bodyEnd = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const body = Buffer.concat([bodyStart, fileBuffer, bodyEnd]);
+  
+  const uploadRes = await fetch('https://api.replicate.com/v1/files', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${REPLICATE_API_TOKEN}`,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    },
+    body: body
+  });
+  
+  const uploadData = await uploadRes.json();
+  console.log('Upload result:', uploadData);
+  
+  if (!uploadRes.ok) {
+    throw new Error('Upload failed: ' + JSON.stringify(uploadData));
+  }
+  
+  return uploadData.url;
+}
+
+// 创建训练zip
+async function createTrainingZip(audioData: Buffer): Promise<string> {
+  const zip = new JSZip();
+  
+  // RVC训练需要特定格式: dataset/<name>/split_*.wav
+  const folder = zip.folder('dataset/user_voice');
+  if (folder) {
+    folder.file('split_001.wav', audioData);
+  }
+  
+  // 生成zip
+  const zipBuffer = await zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
+  
+  // 保存
+  const zipPath = '/tmp/training_dataset.zip';
+  fs.writeFileSync(zipPath, zipBuffer);
+  console.log('Training zip created, size:', zipBuffer.length);
+  
+  return zipPath;
+}
+
+// 上传训练文件
+async function uploadTrainingFile(zipPath: string): Promise<string> {
+  const fileBuffer = fs.readFileSync(zipPath);
+  const boundary = '----FormBoundary' + Math.random().toString(36).substring(2);
+  
+  const bodyParts = [
+    `--${boundary}\r\n`,
+    `Content-Disposition: form-data; name="file"; filename="dataset.zip"\r\n`,
+    `Content-Type: application/zip\r\n\r\n`,
+  ];
+  
+  const bodyStart = Buffer.from(bodyParts.join(''));
+  const bodyEnd = Buffer.from(`\r\n--${boundary}--\r\n`);
+  const body = Buffer.concat([bodyStart, fileBuffer, bodyEnd]);
+  
+  const uploadRes = await fetch('https://api.replicate.com/v1/files', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Token ${REPLICATE_API_TOKEN}`,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    },
+    body: body
+  });
+  
+  const uploadData = await uploadRes.json();
+  console.log('Training file upload result:', uploadData);
+  
+  if (!uploadRes.ok) {
+    throw new Error('Upload training file failed');
+  }
+  
+  return uploadData.url;
+}
+
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -76,43 +182,72 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
 
   if (request.method === 'POST') {
-    if (!songUrl) {
+    if (!songUrl && step !== 'train') {
       return response.status(400).json({ error: 'songUrl is required' });
     }
 
     try {
-      if (step === '1') {
+      if (step === 'train') {
+        // 步骤0: 训练RVC模型
+        console.log('Step train: Uploading user voice for training...');
+        
+        // 下载用户声音
+        let audioBuffer: Buffer;
+        if (userVoiceUrl.startsWith('data:')) {
+          // base64
+          const base64 = userVoiceUrl.split(',')[1];
+          audioBuffer = Buffer.from(base64, 'base64');
+        } else {
+          const resp = await fetch(userVoiceUrl);
+          audioBuffer = Buffer.from(await resp.arrayBuffer());
+        }
+        
+        // 创建训练zip
+        const zipPath = await createTrainingZip(audioBuffer);
+        
+        // 上传到Replicate
+        const uploadedUrl = await uploadTrainingFile(zipPath);
+        console.log('Training file URL:', uploadedUrl);
+        
+        // 开始训练
+        const input = {
+          dataset_zip: uploadedUrl,
+          sample_rate: '48k',
+          version: 'v2',
+          f0method: 'rmvpe_gpu',
+          epoch: 50,
+          batch_size: 7
+        };
+        console.log('Starting RVC training with input:', input);
+        
+        const predId = await createPrediction(RVC_TRAIN_VERSION, input);
+        return response.status(200).json({ predictionId: predId, status: 'starting' });
+        
+      } else if (step === '1') {
         // 步骤1: 音乐分离
-        const version = DEMUCS_VERSION;
         const input = { audio: songUrl };
         console.log('Step 1 - Separation:', input);
-        const predId = await createPrediction(version, input);
+        const predId = await createPrediction(DEMUCS_VERSION, input);
         return response.status(200).json({ predictionId: predId, status: 'starting' });
+        
       } else if (step === '2') {
-        // 步骤2: 歌声转换 - 使用RVC模型
-        // userVoiceUrl 是用户的录音 URL
-        // 需要先训练RVC模型，然后用模型转换
+        // 步骤2: 用训练好的模型转换歌声
+        // userVoiceUrl 是训练好的模型URL
+        console.log('Step 2 - Voice Conversion, model:', userVoiceUrl);
         
-        // 简化版：直接用用户声音作为转换输入（实际需要训练）
-        // 由于RVC训练需要完整pipeline，这里返回用户声音URL
-        console.log('Step 2 - Voice Conversion');
-        console.log('User voice:', userVoiceUrl);
-        
-        // 调用RVC转换
-        const version = RVC_INFERENCE_VERSION;
         const input = {
           song_input: songUrl,
-          rvc_model: 'Squidward', // 使用预置模型测试
+          custom_rvc_model_download_url: userVoiceUrl,
+          rvc_model: 'CUSTOM',
         };
-        console.log('RVC input:', input);
+        console.log('RVC inference input:', input);
         
-        const predId = await createPrediction(version, input);
+        const predId = await createPrediction(RVC_INFER_VERSION, input);
         return response.status(200).json({ predictionId: predId, status: 'starting' });
       } else {
         // 默认步骤1
-        const version = DEMUCS_VERSION;
         const input = { audio: songUrl };
-        const predId = await createPrediction(version, input);
+        const predId = await createPrediction(DEMUCS_VERSION, input);
         return response.status(200).json({ predictionId: predId, status: 'starting' });
       }
     } catch (error) {
