@@ -1,12 +1,24 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import OSS from 'ali-oss';
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
+
+// 阿里云OSS配置 - 从环境变量读取
+const ossClient = new OSS({
+  region: process.env.OSS_REGION || 'oss-cn-hangzhou',
+  bucket: process.env.OSS_BUCKET || 'sing-with-me-shu',
+  accessKeyId: process.env.OSS_ACCESS_KEY_ID || '',
+  accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET || '',
+});
 
 // 音乐分离
 const DEMUCS_VERSION = 'b84861ae9b787409ef92927b5a07704fda87a0a7762e9bb7b09c517357eadb53';
 
-// RVC推理 - 歌声转换
+// RVC推理
 const RVC_INFER_VERSION = '0a9c7c558af4c0f20667c1bd1260ce32a2879944a0b9e44e1398660c077b1550';
+
+// RVC训练
+const RVC_TRAIN_VERSION = 'cf360587a27f67500c30fc31de1e0f0f9aa26dcd7b866e6ac937a07bd104bad9';
 
 async function createPrediction(version: string, input: any): Promise<string> {
   console.log('Creating prediction:', version);
@@ -49,6 +61,14 @@ async function proxyAudio(url: string, res: VercelResponse) {
   }
 }
 
+async function uploadToOSS(base64Data: string, filename: string): Promise<string> {
+  console.log('Uploading to OSS:', filename);
+  const buffer = Buffer.from(base64Data, 'base64');
+  const result = await ossClient.put(`voices/${filename}`, buffer);
+  console.log('OSS upload result:', result.url);
+  return result.url;
+}
+
 export default async function handler(request: VercelRequest, response: VercelResponse) {
   response.setHeader('Access-Control-Allow-Origin', '*');
   response.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
@@ -71,7 +91,6 @@ export default async function handler(request: VercelRequest, response: VercelRe
   }
 
   if (request.method === 'GET' && predictionId) {
-    // 处理预设模型的特殊情况
     if (predictionId === 'preset-model') {
       return response.status(200).json({ status: 'succeeded', output: 'Squidward', error: null });
     }
@@ -86,40 +105,52 @@ export default async function handler(request: VercelRequest, response: VercelRe
 
     try {
       if (step === 'train') {
-        // 训练步骤 - 直接返回成功，使用预置模型
-        // 实际训练需要服务器端文件上传，暂不可用
-        console.log('Step train: Using preset model (training skipped)');
+        console.log('Step train: Starting RVC training...');
         
-        // 返回一个假的模型URL表示训练完成
-        // 实际上我们用预置的 Squidward 声音
-        return response.status(200).json({ 
-          predictionId: 'preset-model', 
-          status: 'succeeded',
-          output: { url: 'Squidward' }
-        });
+        let datasetUrl = userVoiceUrl;
+        
+        if (userVoiceUrl.startsWith('data:')) {
+          const base64 = userVoiceUrl.split(',')[1];
+          const filename = `voice_${Date.now()}.wav`;
+          console.log('Uploading voice to OSS...');
+          datasetUrl = await uploadToOSS(base64, filename);
+          console.log('Uploaded URL:', datasetUrl);
+        } else if (!userVoiceUrl.startsWith('http')) {
+          return response.status(400).json({ error: '需要音频URL或base64数据' });
+        }
+        
+        console.log('Training with dataset URL:', datasetUrl);
+        
+        const input = {
+          dataset_zip: datasetUrl,
+          sample_rate: '48k',
+          version: 'v2',
+          f0method: 'rmvpe_gpu',
+          epoch: 50,
+          batch_size: 7
+        };
+        console.log('Starting RVC training...');
+        
+        const predId = await createPrediction(RVC_TRAIN_VERSION, input);
+        return response.status(200).json({ predictionId: predId, status: 'starting' });
         
       } else if (step === '1') {
-        // 步骤1: 音乐分离
         const input = { audio: songUrl };
         console.log('Step 1 - Separation:', input);
         const predId = await createPrediction(DEMUCS_VERSION, input);
         return response.status(200).json({ predictionId: predId, status: 'starting' });
         
       } else if (step === '2') {
-        // 步骤2: 用RVC模型转换歌声
-        // userVoiceUrl 可以是 'Squidward' 或其他预置模型，或自定义模型URL
         console.log('Step 2 - Voice Conversion, model:', userVoiceUrl);
         
         const input: any = {
           song_input: songUrl,
         };
         
-        // 如果有自定义模型URL
         if (userVoiceUrl && userVoiceUrl.startsWith('http')) {
           input.custom_rvc_model_download_url = userVoiceUrl;
           input.rvc_model = 'CUSTOM';
         } else {
-          // 使用预置模型
           input.rvc_model = userVoiceUrl || 'Squidward';
         }
         
