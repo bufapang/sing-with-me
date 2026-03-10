@@ -109,18 +109,36 @@ export default function App() {
   // 上传用户音频到公开URL
   const uploadUserVoice = async (audioUrl: string): Promise<string> => {
     console.log('Uploading user voice for training...');
-    const response = await fetch('/api/generate', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ userVoiceUrl: audioUrl, step: 'upload' }),
-    });
-    if (!response.ok) {
-      const errData = await response.json();
-      throw new Error(errData.error || `Upload error: ${response.status}`);
+    console.log('Audio URL:', audioUrl);
+    console.log('Audio URL type:', typeof audioUrl);
+    console.log('Audio URL length:', audioUrl?.length);
+    
+    if (!audioUrl) {
+      throw new Error('No audio recorded');
     }
-    const data = await response.json();
-    console.log('Upload result:', data);
-    return data.url;
+    
+    try {
+      const response = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userVoiceUrl: audioUrl, step: 'upload' }),
+      });
+      
+      console.log('Upload response status:', response.status);
+      
+      if (!response.ok) {
+        const errData = await response.json();
+        console.error('Upload error response:', errData);
+        throw new Error(errData.error || `Upload error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      console.log('Upload result:', data);
+      return data.url;
+    } catch (err) {
+      console.error('Upload failed:', err);
+      throw err;
+    }
   };
 
   // 检查预测状态
