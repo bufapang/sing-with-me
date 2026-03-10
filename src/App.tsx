@@ -452,7 +452,7 @@ export default function App() {
       <div className="container mx-auto px-4 py-8 max-w-2xl">
         <header className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
-            🎤 Sing With Me
+            🎤 Sing With Me <span className="text-lg">(君乐参赛作品)</span>
           </h1>
           <p className="text-gray-400">用你的声音唱任何歌曲</p>
         </header>
@@ -465,7 +465,7 @@ export default function App() {
                 <Mic size={64} />
               </div>
               <h2 className="text-2xl font-bold mb-2">录制你的声音</h2>
-              <p className="text-gray-400">点击开始录音，然后唱你想唱的歌曲</p>
+              <p className="text-gray-400">点击开始录音，随机说话10-30秒</p>
             </div>
 
             {recording.isRecording ? (
