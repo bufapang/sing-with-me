@@ -452,7 +452,7 @@ export default function App() {
       <div className="container mx-auto px-4 py-8 max-w-2xl">
         <header className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-2 bg-gradient-to-r from-pink-400 to-purple-400 bg-clip-text text-transparent">
-            🎤 Sing With Me <span className="text-lg">(君乐参赛作品)</span>
+            🎤 Sing With Me <span className="text-xl font-bold">君乐参赛作品，帮忙投票！！！</span>
           </h1>
           <p className="text-gray-400">用你的声音唱任何歌曲</p>
         </header>
