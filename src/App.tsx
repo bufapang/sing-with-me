@@ -343,7 +343,7 @@ export default function App() {
         await new Promise(r => setTimeout(r, 3000));
       }
       
-      setProgressText('步骤3: 转换歌声...');
+      setProgressText('步骤2: 转换歌声（使用预设声音）...');
       console.log('Starting voice conversion with vocalsUrl:', vocalsUrl, 'trainedModelUrl:', trainedModelUrl);
       
       // 步骤3: 歌声转换 - 使用训练好的RVC模型
@@ -373,9 +373,9 @@ export default function App() {
         await new Promise(r => setTimeout(r, 3000));
       }
       
-      setProgressText('步骤4: 混音合成...');
+      setProgressText('步骤3: 混音（使用预设声音）合成...');
       
-      // 步骤3: 混音
+      // 步骤3: 混音（使用预设声音）
       console.log('Starting mix with userVocalsUrl:', userVocalsUrl, 'accompanimentUrl:', accompanimentUrl);
       
       let finalAudioUrl = '';
