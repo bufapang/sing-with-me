@@ -3,20 +3,29 @@ import OSS from 'ali-oss';
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN || '';
 
-// 阿里云OSS配置 - 从环境变量读取
-console.log('OSS env vars:', {
-  region: process.env.OSS_REGION,
-  bucket: process.env.OSS_BUCKET,
-  hasKeyId: !!process.env.OSS_ACCESS_KEY_ID,
-  hasKeySecret: !!process.env.OSS_ACCESS_KEY_SECRET,
-});
+// OSS配置 - 从环境变量读取
+const OSS_REGION = process.env.OSS_REGION || 'oss-cn-hangzhou';
+const OSS_BUCKET = process.env.OSS_BUCKET || 'sing-with-me-shu';
+const OSS_ACCESS_KEY_ID = process.env.OSS_ACCESS_KEY_ID || '';
+const OSS_ACCESS_KEY_SECRET = process.env.OSS_ACCESS_KEY_SECRET || '';
 
-const ossClient = new OSS({
-  region: process.env.OSS_REGION || 'oss-cn-hangzhou',
-  bucket: process.env.OSS_BUCKET || 'sing-with-me-shu',
-  accessKeyId: process.env.OSS_ACCESS_KEY_ID || '',
-  accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET || '',
-});
+// 初始化OSS客户端
+let ossClient: OSS | null = null;
+
+function getOSSClient(): OSS {
+  if (!ossClient) {
+    if (!OSS_ACCESS_KEY_ID || !OSS_ACCESS_KEY_SECRET) {
+      throw new Error('OSS credentials not configured');
+    }
+    ossClient = new OSS({
+      region: OSS_REGION,
+      bucket: OSS_BUCKET,
+      accessKeyId: OSS_ACCESS_KEY_ID,
+      accessKeySecret: OSS_ACCESS_KEY_SECRET,
+    });
+  }
+  return ossClient;
+}
 
 // 音乐分离
 const DEMUCS_VERSION = 'b84861ae9b787409ef92927b5a07704fda87a0a7762e9bb7b09c517357eadb53';
@@ -70,8 +79,9 @@ async function proxyAudio(url: string, res: VercelResponse) {
 
 async function uploadToOSS(base64Data: string, filename: string): Promise<string> {
   console.log('Uploading to OSS:', filename);
+  const client = getOSSClient();
   const buffer = Buffer.from(base64Data, 'base64');
-  const result = await ossClient.put(`voices/${filename}`, buffer);
+  const result = await client.put(`voices/${filename}`, buffer);
   console.log('OSS upload result:', result.url);
   return result.url;
 }
@@ -113,19 +123,15 @@ export default async function handler(request: VercelRequest, response: VercelRe
     try {
       if (step === 'train') {
         console.log('Step train: Starting RVC training...');
+        console.log('OSS config:', { region: OSS_REGION, bucket: OSS_BUCKET, hasKey: !!OSS_ACCESS_KEY_ID });
         
         let datasetUrl = userVoiceUrl;
         
         if (userVoiceUrl.startsWith('data:')) {
-          // 检查OSS是否配置
-          if (!process.env.OSS_ACCESS_KEY_ID) {
-            // OSS未配置，使用预设模型
-            return response.status(200).json({ 
-              predictionId: 'preset-model', 
-              status: 'succeeded',
-              output: { url: 'Squidward' }
-            });
+          if (!OSS_ACCESS_KEY_ID) {
+            throw new Error('OSS not configured - missing OSS_ACCESS_KEY_ID');
           }
+          
           const base64 = userVoiceUrl.split(',')[1];
           const filename = `voice_${Date.now()}.wav`;
           console.log('Uploading voice to OSS...');

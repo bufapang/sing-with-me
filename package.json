@@ -13,6 +13,7 @@
     "clean": "rm -rf node_modules .pnpm-store pnpm-lock.yaml && npm store prune"
   },
   "dependencies": {
+    "ali-oss": "^6.20.0",
     "jszip": "^3.10.1",
     "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-accordion": "^1.2.2",
